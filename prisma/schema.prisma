@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Website {
+  id        Int      @id @default(autoincrement())
+  url       String   @unique
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  audits    Audit[]
+
+  @@map("websites")
+}
+
+model Audit {
+  id                 Int      @id @default(autoincrement())
+  websiteId          Int      @map("website_id")
+  performanceScore   Int?     @map("performance_score")
+  accessibilityScore Int?     @map("accessibility_score")
+  bestPracticesScore Int?     @map("best_practices_score")
+  seoScore           Int?     @map("seo_score")
+  error              String?
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  website Website @relation(fields: [websiteId], references: [id])
+  metrics Metric[]
+
+  @@map("audits")
+}
+
+model Metric {
+  id         Int      @id @default(autoincrement())
+  auditId    Int      @map("audit_id")
+  fcp        Float?   @map("fcp")
+  lcp        Float?   @map("lcp")
+  cls        Float?   @map("cls")
+  tbt        Float?   @map("tbt")
+  speedIndex Float?   @map("speed_index")
+
+  audit Audit @relation(fields: [auditId], references: [id])
+
+  @@map("metrics")
+}
