@@ -31,7 +31,7 @@ const MOCK_ROWS = [
   { websiteId: 40, page: "example.com", url: "https://example.com/", fcp: 0.884979, lcp: 0.884979, tbt: 0, clsVal: 0, si: 0.884979, accessibility: 100, bestPractices: 96, seo: 80, performance: 100, pageLoad: null }
 ];
 
-async function loadDashboardRows() {
+export async function loadDashboardRows() {
   // Static prototype data — see the header comment for the live-fetch swap point.
   return MOCK_ROWS;
 }

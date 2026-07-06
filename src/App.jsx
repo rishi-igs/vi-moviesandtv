@@ -1,4 +1,5 @@
-const { useState, useEffect, useMemo } = React;
+import { useState, useEffect } from "react";
+import { loadDashboardRows } from "./data.js";
 
 // ---------------------------------------------------------------------------
 // Icons (inline SVG components, stroke-based, no external icon library)
@@ -244,7 +245,7 @@ function RatingPanel() {
   );
 }
 
-function App() {
+export default function App() {
   const [rows, setRows] = useState([]);
   const [lastUpdated, setLastUpdated] = useState("—");
   const [error, setError] = useState(null);
@@ -278,5 +279,3 @@ function App() {
     </div>
   );
 }
-
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
