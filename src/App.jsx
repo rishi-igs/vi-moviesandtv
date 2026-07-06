@@ -275,7 +275,6 @@ export default function App() {
           </section>
         </>
       )}
-      <footer className="credit">React prototype &middot; static snapshot data &middot; live DB Data fetch coming next</footer>
     </div>
   );
 }
