@@ -1,5 +1,11 @@
+<<<<<<< HEAD
 node_modules/
 .next/
 *.tsbuildinfo
 next-env.d.ts
 .env
+=======
+DB Data/
+node_modules/
+dist/
+>>>>>>> 7eb55d6a7a8c7ea0f65727a603648df4e4fca5b9

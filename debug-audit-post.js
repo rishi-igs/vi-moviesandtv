@@ -23,4 +23,8 @@ req.on('error', (err) => {
   console.error('error', err.message);
 });
 req.write(data);
+<<<<<<< HEAD
 req.end();
+=======
+req.end();
+>>>>>>> 7eb55d6a7a8c7ea0f65727a603648df4e4fca5b9
