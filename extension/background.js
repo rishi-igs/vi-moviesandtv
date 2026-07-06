@@ -198,14 +198,12 @@ chrome.runtime.onMessage.addListener(async (message, sender) => {
 })
 
 async function onTabUpdated(tabId, changeInfo, tab) {
-  const url = tab?.url || changeInfo?.url
-  if (!url || !url.startsWith('http')) return
-  if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) return
+  if (changeInfo.status !== 'complete' || !tab.url) return
+  if (!tab.url.startsWith('http')) return
+  if (tab.url.startsWith('http://localhost') || tab.url.startsWith('http://127.0.0.1')) return
 
-  if (changeInfo.status === 'complete' || changeInfo.url || changeInfo.status === 'loading') {
-    if (await shouldAudit(url)) {
-      triggerAudit(url, tabId)
-    }
+  if (await shouldAudit(tab.url)) {
+    triggerAudit(tab.url, tabId)
   }
 }
 
@@ -229,20 +227,6 @@ async function onNavigationCommitted(details) {
 }
 
 chrome.tabs.onUpdated.addListener(onTabUpdated)
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  try {
-    const [tab] = await chrome.tabs.get(tabId)
-    if (tab?.url) {
-      await handleNavigation(tab.url, tabId)
-    }
-  } catch (e) {
-    console.warn('[Lighthouse] Failed to inspect active tab', e)
-  }
-})
-chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
-  if (details.frameId !== 0) return
-  await handleNavigation(details.url, details.tabId)
-})
 chrome.webNavigation.onCompleted.addListener(onNavigationCompleted)
 chrome.webNavigation.onHistoryStateUpdated.addListener(onNavigationCompleted)
 chrome.webNavigation.onCommitted.addListener(onNavigationCommitted)

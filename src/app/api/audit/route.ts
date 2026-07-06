@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/app/_lib/prisma'
 import { runLighthouseAudit as runLighthouseDefault } from '@/app/_lib/lighthouse-runner'
-import { shouldSkipAudit } from '@/app/_lib/audit-cooldown'
 
 const USE_PLAYWRIGHT = process.env.USE_PLAYWRIGHT === '1'
 
@@ -12,7 +11,7 @@ async function runLighthousePlaywright(url: string) {
   return module.runLighthouseAudit(url)
 }
 
-const recentAuditCache = new Map<string, number>()
+const COOLDOWN_MS = 5 * 60 * 1000
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,7 +55,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create website' }, { status: 500, headers: corsHeaders })
   }
 
-  if (shouldSkipAudit(recentAuditCache, normalizedUrl, Date.now())) {
+  const lastAudit = await prisma.audit.findFirst({
+    where: { websiteId: website.id },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (lastAudit && Date.now() - new Date(lastAudit.createdAt).getTime() < COOLDOWN_MS) {
     return NextResponse.json(
       { message: 'Skipped — recently audited', website },
       { headers: corsHeaders }
