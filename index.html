@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Website Performance Report</title>
+<link rel="icon" href="/Assets/images.png" />
+<link rel="stylesheet" href="/styles.css" />
+
+<!-- No-build React setup: React + Babel loaded from CDN, JSX transpiled in-browser.
+     Requires internet access. Once Node.js is installable, this can be replaced
+     with a proper Vite + React project without changing component code. -->
+<script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="/data.js"></script>
+<script>
+  // Fetch + transpile app.jsx ourselves, forcing the "classic" JSX runtime
+  // (React.createElement calls) instead of Babel's default "automatic" runtime,
+  // which emits an ES `import` that a plain <script> tag can't execute.
+  fetch('/app.jsx')
+    .then(r => r.text())
+    .then(src => {
+      const { code } = Babel.transform(src, { presets: [['react', { runtime: 'classic' }]] });
+      const script = document.createElement('script');
+      script.text = code;
+      document.body.appendChild(script);
+    });
+</script>
+</body>
+</html>
