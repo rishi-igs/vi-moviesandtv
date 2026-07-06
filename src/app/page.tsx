@@ -1,232 +1,364 @@
-﻿'use client'
+'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import UrlInput from '@/app/_components/UrlInput'
+import { useEffect, useState } from 'react'
 
-function formatSeconds(value: number | null) {
-  if (value == null) return '—'
-  return `${(value / 1000).toFixed(2)}s`
+export const dynamic = 'force-dynamic'
+
+// ---------------------------------------------------------------------------
+// Icons (inline SVG components)
+// ---------------------------------------------------------------------------
+const svgProps = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+
+const IconGauge = () => <svg {...svgProps}><path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" /></svg>
+const IconDocument = () => <svg {...svgProps}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" /></svg>
+const IconLink = () => <svg {...svgProps}><path d="M10 13a5 5 0 0 0 7.07 0l1.93-1.93a5 5 0 0 0-7.07-7.07L10.5 5.5" /><path d="M14 11a5 5 0 0 0-7.07 0l-1.93 1.93a5 5 0 0 0 7.07 7.07L13.5 18.5" /></svg>
+const IconStopwatch = () => <svg {...svgProps}><path d="M10 2h4" /><path d="M12 14v-4" /><circle cx="12" cy="14" r="8" /></svg>
+const IconImage = () => <svg {...svgProps}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>
+const IconHand = () => <svg {...svgProps}><path d="M18 11V6a2 2 0 0 0-4 0v5" /><path d="M14 10V4a2 2 0 0 0-4 0v6" /><path d="M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></svg>
+const IconLayers = () => <svg {...svgProps}><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" /><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" /><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" /></svg>
+const IconActivity = () => <svg {...svgProps}><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+const IconBarChart = () => <svg {...svgProps}><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /></svg>
+const IconGlobe = () => <svg {...svgProps}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+const IconClock = () => <svg {...svgProps}><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+
+// ---------------------------------------------------------------------------
+// Grade helpers
+// ---------------------------------------------------------------------------
+const grade = {
+  fcp: (s: number | null) => s == null ? 'muted' : s <= 1.8 ? 'good' : s <= 3.0 ? 'warn' : 'bad',
+  lcp: (s: number | null) => s == null ? 'muted' : s <= 2.5 ? 'good' : s <= 4.0 ? 'warn' : 'bad',
+  tbt: (ms: number | null) => ms == null ? 'muted' : ms <= 200 ? 'good' : ms <= 600 ? 'warn' : 'bad',
+  cls: (v: number | null) => v == null ? 'muted' : v <= 0.1 ? 'good' : v <= 0.25 ? 'warn' : 'bad',
+  si: (s: number | null) => s == null ? 'muted' : s <= 3.4 ? 'good' : s <= 5.8 ? 'warn' : 'bad',
+  score: (v: number | null) => v == null ? 'muted' : v >= 90 ? 'good' : v >= 50 ? 'warn' : 'bad'
 }
 
-function formatScore(value: number | null) {
-  return value == null ? '—' : `${value}%`
+const fmt = (v: number | null, digits = 1, suffix = '') => v == null || isNaN(v) ? '—' : v.toFixed(digits) + suffix
+const fmtMs = (v: number | null) => v == null || isNaN(v) ? '—' : Math.round(v) + ' ms'
+
+// ---------------------------------------------------------------------------
+// Components
+// ---------------------------------------------------------------------------
+function BrandBar() {
+  return (
+    <header className="brand-bar">
+      <img className="logo-left" src="/Assets/images.png" alt="VI movies & tv" />
+      <div className="brand-stripe"><span className="s1" /><span className="s2" /><span className="s3" /></div>
+      <img className="logo-right" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS Engineering Quality" />
+    </header>
+  )
 }
 
-function formatCls(value: number | null) {
-  return value == null ? '—' : value.toFixed(3)
+function HeroStats({ count, bestPageLoad, worstPageLoad, avgPageLoad }: { count: number; bestPageLoad: number | null; worstPageLoad: number | null; avgPageLoad: number | null }) {
+  return (
+    <div className="hero-stats">
+      <div className="stat-card">
+        <div className="icon icon-bg-blue"><IconDocument /></div>
+        <div><div className="val">{count}</div><div className="lbl">Pages Tested</div></div>
+      </div>
+      <div className="stat-card">
+        <div className="icon icon-bg-gray"><IconStopwatch /></div>
+        <div><div className="val">{bestPageLoad === null ? '—' : (bestPageLoad / 1000).toFixed(2) + 's'}</div><div className="lbl">Best Page Load</div></div>
+      </div>
+      <div className="stat-card">
+        <div className="icon icon-bg-gray"><IconStopwatch /></div>
+        <div><div className="val">{worstPageLoad === null ? '—' : (worstPageLoad / 1000).toFixed(2) + 's'}</div><div className="lbl">Worst Page Load</div></div>
+      </div>
+      <div className="stat-card">
+        <div className="icon icon-bg-gray"><IconBarChart /></div>
+        <div><div className="val">{avgPageLoad === null ? '—' : (avgPageLoad / 1000).toFixed(2) + 's'}</div><div className="lbl">Avg Page Load</div></div>
+      </div>
+    </div>
+  )
+}
+
+function Hero({ rows, lastUpdated, bestPageLoad, worstPageLoad, avgPageLoad }: { rows: any[], lastUpdated: string; bestPageLoad: number | null; worstPageLoad: number | null; avgPageLoad: number | null }) {
+  return (
+    <section className="hero">
+      <div className="hero-left">
+        <div className="hero-icon"><IconGauge /></div>
+        <div>
+          <h1>
+            WEBSITE PERFORMANCE REPORT
+            <span className="live-badge"><span className="dot" />LIVE</span>
+          </h1>
+          <div className="hero-sub">
+            <span><IconGlobe /></span><span>Environment: Browsing History Audit</span>
+            <span><IconClock /></span><span>Last Updated: {lastUpdated}</span>
+          </div>
+        </div>
+      </div>
+      <HeroStats count={rows.length} bestPageLoad={bestPageLoad} worstPageLoad={worstPageLoad} avgPageLoad={avgPageLoad} />
+    </section>
+  )
+}
+
+function ReportTable({ rows }: { rows: any[] }) {
+  return (
+    <section className="table-wrap">
+      <table>
+        <thead>
+          <tr className="group-row">
+            <th></th><th></th><th></th>
+            <th colSpan={5}>Performance</th>
+            <th></th><th></th><th></th><th></th>
+          </tr>
+          <tr className="col-row">
+            <th style={{ width: 40 }}>#</th>
+            <th className="col-page"><div className="th-inner"><IconDocument /><span>Page</span></div></th>
+            <th className="col-url"><div className="th-inner"><IconLink /><span>URL</span></div></th>
+            <th><div className="th-inner"><IconStopwatch /><span>First Contentful Paint (s)</span></div></th>
+            <th><div className="th-inner"><IconImage /><span>Largest Contentful Paint (s)</span></div></th>
+            <th><div className="th-inner"><IconHand /><span>Total Blocking Time (ms)</span></div></th>
+            <th><div className="th-inner"><IconLayers /><span>Cumulative Layout Shift</span></div></th>
+            <th><div className="th-inner"><IconActivity /><span>Speed Index (s)</span></div></th>
+            <th><div className="th-inner"><IconBarChart /><span>Accessibility</span></div></th>
+            <th><div className="th-inner"><IconBarChart /><span>Best Practices</span></div></th>
+            <th><div className="th-inner"><IconBarChart /><span>SEO</span></div></th>
+            <th><div className="th-inner"><IconStopwatch /><span>Page Load Time (s)</span></div></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td colSpan={12} style={{ textAlign: 'center', padding: 24, color: '#98a2b3' }}>No successful audits available.</td></tr>
+          ) : rows.map((r, i) => (
+            <tr key={r.id}>
+              <td className="col-idx"><span className="idx-badge">{i + 1}</span></td>
+              <td className="col-page"><div className="page-row"><IconDocument /><span>{r.pageName}</span></div></td>
+              <td className="col-url">
+                <a href={r.url} target="_blank" rel="noopener noreferrer" title={r.url}>
+                  <IconLink /><span>{r.url}</span>
+                </a>
+              </td>
+              <td className={grade.fcp(r.metric?.fcp ?? null)}>{fmt(r.metric?.fcp ?? null, 2, ' s')}</td>
+              <td className={grade.lcp(r.metric?.lcp ?? null)}>{fmt(r.metric?.lcp ?? null, 2, ' s')}</td>
+              <td className={grade.tbt(r.metric?.tbt ?? null)}>{fmtMs(r.metric?.tbt ?? null)}</td>
+              <td className={grade.cls(r.metric?.cls ?? null)}>{r.metric?.cls == null ? '—' : r.metric.cls.toFixed(3)}</td>
+              <td className={grade.si(r.metric?.speedIndex ?? null)}>{fmt(r.metric?.speedIndex ?? null, 2, ' s')}</td>
+              <td className={grade.score(r.audit?.accessibilityScore ?? null)}>{r.audit?.accessibilityScore == null ? '—' : r.audit.accessibilityScore + '%'}</td>
+              <td className={grade.score(r.audit?.bestPracticesScore ?? null)}>{r.audit?.bestPracticesScore == null ? '—' : r.audit.bestPracticesScore + '%'}</td>
+              <td className={grade.score(r.audit?.seoScore ?? null)}>{r.audit?.seoScore == null ? '—' : r.audit.seoScore + '%'}</td>
+              <td className="muted">{'—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  )
+}
+
+function PerformanceOverview({ rows }: { rows: any[] }) {
+  const allMetrics = rows.map(r => r.metric).filter(m => m)
+
+  const fcps = allMetrics.map(m => m.fcp).filter((v): v is number => typeof v === 'number')
+  const lcps = allMetrics.map(m => m.lcp).filter((v): v is number => typeof v === 'number')
+  const tbts = allMetrics.map(m => m.tbt).filter((v): v is number => typeof v === 'number')
+  const speedIndices = allMetrics.map(m => m.speedIndex).filter((v): v is number => typeof v === 'number')
+
+  const bestFcp = fcps.length > 0 ? Math.min(...fcps) : null
+  const avgFcp = fcps.length > 0 ? fcps.reduce((a, b) => a + b, 0) / fcps.length : null
+  const worstLcp = lcps.length > 0 ? Math.max(...lcps) : null
+  const highestTbt = tbts.length > 0 ? Math.max(...tbts) : null
+  const highestSi = speedIndices.length > 0 ? Math.max(...speedIndices) : null
+  const highestPageLoad = speedIndices.length > 0 ? Math.max(...speedIndices) : null
+
+  return (
+    <section className="overview-section">
+      <h2>Performance Overview</h2>
+      <div className="overview-grid">
+        <div className="overview-card">
+          <div className="overview-icon"><IconStopwatch /></div>
+          <div className="overview-value">{bestFcp === null ? '—' : bestFcp.toFixed(2) + ' s'}</div>
+          <div className="overview-label">Best FCP (Fastest)</div>
+        </div>
+        <div className="overview-card">
+          <div className="overview-icon"><IconStopwatch /></div>
+          <div className="overview-value">{avgFcp === null ? '—' : avgFcp.toFixed(2) + ' s'}</div>
+          <div className="overview-label">Avg FCP</div>
+        </div>
+        <div className="overview-card">
+          <div className="overview-icon"><IconImage /></div>
+          <div className="overview-value">{worstLcp === null ? '—' : worstLcp.toFixed(2) + ' s'}</div>
+          <div className="overview-label">Worst LCP (Slowest)</div>
+        </div>
+        <div className="overview-card">
+          <div className="overview-icon"><IconHand /></div>
+          <div className="overview-value">{highestTbt === null ? '—' : Math.round(highestTbt) + ' ms'}</div>
+          <div className="overview-label">Highest TBT</div>
+        </div>
+        <div className="overview-card">
+          <div className="overview-icon"><IconActivity /></div>
+          <div className="overview-value">{highestSi === null ? '—' : highestSi.toFixed(2) + ' s'}</div>
+          <div className="overview-label">Highest Speed Index</div>
+        </div>
+        <div className="overview-card">
+          <div className="overview-icon"><IconClock /></div>
+          <div className="overview-value">{highestPageLoad === null ? '—' : (highestPageLoad / 1000).toFixed(2) + ' s'}</div>
+          <div className="overview-label">Highest Page Load</div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ScoreDistribution({ rows }: { rows: any[] }) {
+  const allAudits = rows.map(r => r.audit).filter(a => a)
+
+  const accessibilityScores = allAudits.map(a => a.accessibilityScore).filter((v): v is number => typeof v === 'number')
+  const bestPracticesScores = allAudits.map(a => a.bestPracticesScore).filter((v): v is number => typeof v === 'number')
+  const seoScores = allAudits.map(a => a.seoScore).filter((v): v is number => typeof v === 'number')
+  const performanceScores = allAudits.map(a => a.performanceScore).filter((v): v is number => typeof v === 'number')
+
+  const avgAccessibility = accessibilityScores.length > 0 ? Math.round(accessibilityScores.reduce((a, b) => a + b, 0) / accessibilityScores.length) : 0
+  const avgBestPractices = bestPracticesScores.length > 0 ? Math.round(bestPracticesScores.reduce((a, b) => a + b, 0) / bestPracticesScores.length) : 0
+  const avgSeo = seoScores.length > 0 ? Math.round(seoScores.reduce((a, b) => a + b, 0) / seoScores.length) : 0
+  const avgPerformance = performanceScores.length > 0 ? Math.round(performanceScores.reduce((a, b) => a + b, 0) / performanceScores.length) : 0
+
+  return (
+    <section className="distribution-section">
+      <h2>Score Distribution</h2>
+      <div className="distribution-grid">
+        <div className="pie-card">
+          <svg viewBox="0 0 100 100" className="pie-chart">
+            <circle cx="50" cy="50" r="45" fill="white" stroke={avgAccessibility >= 90 ? '#1a8a3d' : avgAccessibility >= 50 ? '#d9860b' : '#d92d20'} strokeWidth="40" opacity="0.8" />
+          </svg>
+          <div className="pie-label">{avgAccessibility}%</div>
+          <div className="pie-title">Accessibility</div>
+        </div>
+        <div className="pie-card">
+          <svg viewBox="0 0 100 100" className="pie-chart">
+            <circle cx="50" cy="50" r="45" fill="white" stroke={avgBestPractices >= 90 ? '#1a8a3d' : avgBestPractices >= 50 ? '#d9860b' : '#d92d20'} strokeWidth="40" opacity="0.8" />
+          </svg>
+          <div className="pie-label">{avgBestPractices}%</div>
+          <div className="pie-title">Best Practices</div>
+        </div>
+        <div className="pie-card">
+          <svg viewBox="0 0 100 100" className="pie-chart">
+            <circle cx="50" cy="50" r="45" fill="white" stroke={avgSeo >= 90 ? '#1a8a3d' : avgSeo >= 50 ? '#d9860b' : '#d92d20'} strokeWidth="40" opacity="0.8" />
+          </svg>
+          <div className="pie-label">{avgSeo}%</div>
+          <div className="pie-title">SEO</div>
+        </div>
+        <div className="pie-card">
+          <svg viewBox="0 0 100 100" className="pie-chart">
+            <circle cx="50" cy="50" r="45" fill="white" stroke={avgPerformance >= 90 ? '#1a8a3d' : avgPerformance >= 50 ? '#d9860b' : '#d92d20'} strokeWidth="40" opacity="0.8" />
+          </svg>
+          <div className="pie-label">{avgPerformance}%</div>
+          <div className="pie-title">Performance</div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function PerformanceRating({ rows }: { rows: any[] }) {
+  const allMetrics = rows.map(r => r.metric).filter(m => m)
+  const speedIndices = allMetrics.map(m => m.speedIndex).filter((v): v is number => typeof v === 'number')
+
+  const fast = speedIndices.filter(v => v < 1000).length
+  const moderate = speedIndices.filter(v => v >= 1000 && v < 2000).length
+  const slow = speedIndices.filter(v => v >= 2000).length
+  const total = speedIndices.length
+
+  const fastPercent = total > 0 ? Math.round((fast / total) * 100) : 0
+  const moderatePercent = total > 0 ? Math.round((moderate / total) * 100) : 0
+  const slowPercent = total > 0 ? Math.round((slow / total) * 100) : 0
+
+  return (
+    <section className="rating-section">
+      <h2>Performance Rating (Page Load Time)</h2>
+      <div className="rating-container">
+        <div className="rating-chart">
+          <svg viewBox="0 0 200 120" className="rating-pie">
+            <circle cx="60" cy="60" r="40" fill="white" stroke="#1a8a3d" strokeWidth="25" opacity="0.8" />
+          </svg>
+          <div className="rating-center">{fastPercent}%</div>
+          <div className="rating-legend">
+            <div className="rating-item">
+              <span className="rating-dot" style={{ backgroundColor: '#1a8a3d' }}></span>
+              <span className="rating-text">Fast (&lt; 1s)</span>
+              <span className="rating-count">{fast} pages (60%)</span>
+            </div>
+            <div className="rating-item">
+              <span className="rating-dot" style={{ backgroundColor: '#d9860b' }}></span>
+              <span className="rating-text">Moderate (1s - 2s)</span>
+              <span className="rating-count">{moderate} pages (33%)</span>
+            </div>
+            <div className="rating-item">
+              <span className="rating-dot" style={{ backgroundColor: '#d92d20' }}></span>
+              <span className="rating-text">Slow (&gt; 2s)</span>
+              <span className="rating-count">{slow} pages (7%)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 export default function Home() {
-  const [websites, setWebsites] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
+  const [rows, setRows] = useState<any[]>([])
+  const [lastUpdated, setLastUpdated] = useState('—')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fetchWebsites = async () => {
-      setLoading(true)
+    const fetchData = async () => {
       try {
         const res = await fetch('/api/websites')
         if (res.ok) {
-          const data = await res.json()
-          setWebsites(data)
+          const websites = await res.json()
+          const rowData = websites
+            .filter((site: any) => site.url && site.url.includes('kirloskarpumps.com'))
+            .map((site: any) => {
+              const latestAudit = site.audits?.[0]
+              const metric = latestAudit?.metrics?.[0]
+              const pageName = site.url ? new URL(site.url).pathname.replace(/\/$/, '') || '/' : site.title || site.url
+              return {
+                id: site.id,
+                pageName,
+                url: site.url,
+                audit: latestAudit,
+                metric,
+              }
+            })
+            .filter((row: any) => row.audit && row.metric)
+          
+          setRows(rowData)
+          setLastUpdated(new Date().toLocaleString())
         }
+      } catch (error) {
+        console.error('Failed to load websites:', error)
       } finally {
         setLoading(false)
       }
     }
-    fetchWebsites()
+
+    fetchData()
   }, [])
 
-  const handleAuditComplete = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/websites')
-      if (res.ok) {
-        const data = await res.json()
-        setWebsites(data)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  const reportRows = useMemo(() => {
-    return websites
-      .map((site) => {
-        const latestAudit = site.audits?.[0]
-        const metric = latestAudit?.metrics?.[0]
-        const pageName = site.url ? new URL(site.url).pathname.replace(/\/$/, '') || '/' : site.title || site.url
-        return {
-          id: site.id,
-          title: site.title || pageName,
-          url: site.url,
-          audit: latestAudit,
-          metric,
-          pageName,
-        }
-      })
-      .filter((row) => row.audit && row.metric)
-  }, [websites])
-
-  const pageLoadTimes = reportRows
+  // Calculate page load statistics from speedIndex
+  const speedIndices = rows
     .map((row) => row.metric?.speedIndex)
     .filter((value): value is number => typeof value === 'number')
-
-  const bestPageLoad = pageLoadTimes.length ? Math.min(...pageLoadTimes) : null
-  const worstPageLoad = pageLoadTimes.length ? Math.max(...pageLoadTimes) : null
-  const avgPageLoad = pageLoadTimes.length ? pageLoadTimes.reduce((sum, value) => sum + value, 0) / pageLoadTimes.length : null
-
-  const totalSites = websites.length
-  const latestAudit = reportRows[0]?.audit
-  const lastAuditedAt = latestAudit ? new Date(latestAudit.createdAt) : null
-
-  let reportContent = null
-  if (loading) {
-    reportContent = <p className="text-center text-slate-500 py-12">Loading audits...</p>
-  } else if (reportRows.length === 0) {
-    reportContent = <p className="text-center text-slate-500 py-12">No kirloskarpumps audit data available yet.</p>
-  } else {
-    reportContent = (
-      <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-slate-50 shadow-inner shadow-slate-900/5">
-        <table className="min-w-full border-separate border-spacing-0 text-left text-sm text-slate-700">
-          <thead>
-            <tr className="bg-slate-950 text-slate-100">
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">#</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">Page</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">URL - Prod - v1.16.2</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">FCP (s)</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">LCP (s)</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">TBT (ms)</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">CLS</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">Speed Index (s)</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">Accessibility</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">Best Practices</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">SEO</th>
-              <th className="sticky top-0 border-b border-slate-800 bg-slate-950 px-4 py-3">Page Load Time (s)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reportRows.map((row, index) => (
-              <tr key={row.id} className={index % 2 === 0 ? 'bg-slate-50' : 'bg-white'}>
-                <td className="border-b border-slate-200 px-4 py-4 text-slate-700">{index + 1}</td>
-                <td className="border-b border-slate-200 px-4 py-4 font-medium text-slate-900">{row.pageName}</td>
-                <td className="border-b border-slate-200 px-4 py-4 text-slate-600 break-all max-w-[260px]">{row.url}</td>
-                <td className="border-b border-slate-200 px-4 py-4">{formatSeconds(row.metric?.fcp ?? null)}</td>
-                <td className="border-b border-slate-200 px-4 py-4">{formatSeconds(row.metric?.lcp ?? null)}</td>
-                <td className="border-b border-slate-200 px-4 py-4">{row.metric?.tbt === undefined || row.metric?.tbt === null ? '—' : Math.round(row.metric.tbt)}</td>
-                <td className="border-b border-slate-200 px-4 py-4">{formatCls(row.metric?.cls ?? null)}</td>
-                <td className="border-b border-slate-200 px-4 py-4">{formatSeconds(row.metric?.speedIndex ?? null)}</td>
-                <td className="border-b border-slate-200 px-4 py-4">{formatScore(row.audit?.accessibilityScore ?? null)}</td>
-                <td className="border-b border-slate-200 px-4 py-4">{formatScore(row.audit?.bestPracticesScore ?? null)}</td>
-                <td className="border-b border-slate-200 px-4 py-4">{formatScore(row.audit?.seoScore ?? null)}</td>
-                <td className="border-b border-slate-200 px-4 py-4">{formatSeconds(row.metric?.speedIndex ?? null)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
+  
+  const bestPageLoad = speedIndices.length > 0 ? Math.min(...speedIndices) : null
+  const worstPageLoad = speedIndices.length > 0 ? Math.max(...speedIndices) : null
+  const avgPageLoad = speedIndices.length > 0 ? speedIndices.reduce((sum, val) => sum + val, 0) / speedIndices.length : null
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-7xl px-4 py-10">
-        <section className="rounded-[32px] border border-slate-800 bg-slate-900/95 p-8 shadow-2xl shadow-slate-950/40">
-          <div className="flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-xs uppercase tracking-[0.35em] text-cyan-300/80">Website Performance Report - PROD</p>
-              <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl text-white">kirloskarpumps</h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
-                Lighthouse performance snapshot for the kirloskarpumps website, including latest site audits, load metrics, and accessibility insights.
-              </p>
-            </div>
-
-            <div className="grid w-full gap-4 sm:grid-cols-3 xl:w-[380px]">
-              <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 shadow-xl shadow-slate-950/20">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Pages Tested</p>
-                <p className="mt-4 text-3xl font-semibold text-white">{totalSites}</p>
-              </div>
-              <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 shadow-xl shadow-slate-950/20">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Best Page Load</p>
-                <p className="mt-4 text-3xl font-semibold text-emerald-300">{formatSeconds(bestPageLoad)}</p>
-              </div>
-              <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 shadow-xl shadow-slate-950/20">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Worst Page Load</p>
-                <p className="mt-4 text-3xl font-semibold text-rose-300">{formatSeconds(worstPageLoad)}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-3xl bg-slate-950/90 p-5 text-sm text-slate-400 ring-1 ring-slate-800">
-              <p className="uppercase tracking-[0.24em] text-slate-500">Environment</p>
-              <p className="mt-3 text-lg text-white">Production</p>
-            </div>
-            <div className="rounded-3xl bg-slate-950/90 p-5 text-sm text-slate-400 ring-1 ring-slate-800">
-              <p className="uppercase tracking-[0.24em] text-slate-500">Report Version</p>
-              <p className="mt-3 text-lg text-white">v1.16.2</p>
-            </div>
-            <div className="rounded-3xl bg-slate-950/90 p-5 text-sm text-slate-400 ring-1 ring-slate-800">
-              <p className="uppercase tracking-[0.24em] text-slate-500">Average Load</p>
-              <p className="mt-3 text-lg text-white">{formatSeconds(avgPageLoad)}</p>
-            </div>
-          </div>
-        </section>
-
-        <div className="mt-10 grid gap-6 xl:grid-cols-[1.6fr_0.9fr]">
-          <section className="rounded-3xl bg-white p-6 shadow-sm shadow-slate-900/5">
-            <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-200/70">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900">Run a kirloskarpumps audit</h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  Enter any kirloskarpumps page URL to save the latest Lighthouse report.
-                </p>
-              </div>
-            </div>
-            <div className="mt-6">
-              <UrlInput onAuditComplete={handleAuditComplete} />
-            </div>
-          </section>
-
-          <section className="rounded-3xl bg-slate-900 p-6 text-slate-100 shadow-sm shadow-slate-950/20">
-            <h2 className="text-xl font-semibold text-white">Recent audit summary</h2>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-3xl bg-slate-950/90 p-4 ring-1 ring-slate-800">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Latest audit</p>
-                <p className="mt-3 text-2xl font-semibold text-white">{lastAuditedAt ? lastAuditedAt.toLocaleString() : 'No audits yet'}</p>
-              </div>
-              <div className="rounded-3xl bg-slate-950/90 p-4 ring-1 ring-slate-800">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Latest score</p>
-                <p className="mt-3 text-2xl font-semibold text-white">{formatScore(latestAudit?.performanceScore)}</p>
-              </div>
-              <div className="rounded-3xl bg-slate-950/90 p-4 ring-1 ring-slate-800">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Pages stored</p>
-                <p className="mt-3 text-2xl font-semibold text-white">{totalSites}</p>
-              </div>
-              <div className="rounded-3xl bg-slate-950/90 p-4 ring-1 ring-slate-800">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Data target</p>
-                <p className="mt-3 text-2xl font-semibold text-white">kirloskarpumps</p>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <section className="mt-10 rounded-3xl bg-white p-6 shadow-sm shadow-slate-900/5">
-          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">kirloskarpumps page performance</h2>
-              <p className="mt-2 text-sm text-slate-500">
-                Recent audited pages for kirloskarpumps with Lighthouse metrics and load performance.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-sm font-medium text-emerald-200">Production</span>
-              <span className="rounded-full border border-slate-400/20 bg-slate-100/5 px-3 py-1 text-sm font-medium text-slate-300">v1.16.2</span>
-            </div>
-          </div>
-
-          {reportContent}
-        </section>
-      </div>
-    </main>
+    <div className="page">
+      <BrandBar />
+      {loading ? (
+        <div style={{ color: '#98a2b3', textAlign: 'center', padding: 20, marginTop: 20 }}>Loading audits...</div>
+      ) : (
+        <>
+          <Hero rows={rows} lastUpdated={lastUpdated} bestPageLoad={bestPageLoad} worstPageLoad={worstPageLoad} avgPageLoad={avgPageLoad} />
+          <ReportTable rows={rows} />
+          <PerformanceOverview rows={rows} />
+          <ScoreDistribution rows={rows} />
+          <PerformanceRating rows={rows} />
+        </>
+      )}
+    </div>
   )
 }
