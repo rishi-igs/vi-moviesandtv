@@ -17,17 +17,25 @@ model Website {
   @@map("websites")
 }
 
-model Audit {
-  id                 Int      @id @default(autoincrement())
-  websiteId          Int      @map("website_id")
-  performanceScore   Int?     @map("performance_score")
-  accessibilityScore Int?     @map("accessibility_score")
-  bestPracticesScore Int?     @map("best_practices_score")
-  seoScore           Int?     @map("seo_score")
-  error              String?
-  createdAt          DateTime @default(now()) @map("created_at")
+enum AuditStatus {
+  pending
+  complete
+  failed
+}
 
-  website Website @relation(fields: [websiteId], references: [id])
+model Audit {
+  id                 Int         @id @default(autoincrement())
+  websiteId          Int         @map("website_id")
+  status             AuditStatus @default(complete) @map("status")
+  performanceScore   Int?        @map("performance_score")
+  accessibilityScore Int?        @map("accessibility_score")
+  bestPracticesScore Int?        @map("best_practices_score")
+  seoScore           Int?        @map("seo_score")
+  error              String?
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  website Website  @relation(fields: [websiteId], references: [id])
   metrics Metric[]
 
   @@map("audits")
@@ -41,6 +49,7 @@ model Metric {
   cls        Float?   @map("cls")
   tbt        Float?   @map("tbt")
   speedIndex Float?   @map("speed_index")
+  tti        Float?   @map("tti")
 
   audit Audit @relation(fields: [auditId], references: [id])
 

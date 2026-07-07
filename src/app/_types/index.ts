@@ -9,6 +9,7 @@ export interface LighthouseResult {
   cls: number | null
   tbt: number | null
   speedIndex: number | null
+  tti: number | null
 }
 
 export interface WebsiteWithAudits {
@@ -32,5 +33,6 @@ export interface AuditWithMetrics {
     cls: number | null
     tbt: number | null
     speedIndex: number | null
+    tti: number | null
   } | null
 }

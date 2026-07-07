@@ -112,6 +112,7 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
       cls: lhr.audits['cumulative-layout-shift']?.numericValue ?? null,
       tbt: lhr.audits['total-blocking-time']?.numericValue ?? null,
       speedIndex: lhr.audits['speed-index']?.numericValue ?? null,
+      tti: lhr.audits['interactive']?.numericValue ?? null,
     }
   } catch (error) {
     console.error('Lighthouse runner error:', error)
