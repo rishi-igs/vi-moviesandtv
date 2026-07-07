@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { loadDashboardRows } from "./data.js";
 
 // ---------------------------------------------------------------------------
@@ -113,9 +113,45 @@ function Hero({ rows, lastUpdated }) {
 }
 
 function ReportTable({ rows }) {
+  const tableWrapRef = useRef(null);
+  const stickyBarRef = useRef(null);
+  const tableRef = useRef(null);
+  const syncingRef = useRef(false);
+  const [scrollWidth, setScrollWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    function measure() {
+      if (tableRef.current) setScrollWidth(tableRef.current.scrollWidth);
+    }
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (tableRef.current) ro.observe(tableRef.current);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [rows]);
+
+  function handleTableScroll() {
+    if (syncingRef.current) { syncingRef.current = false; return; }
+    if (stickyBarRef.current) {
+      syncingRef.current = true;
+      stickyBarRef.current.scrollLeft = tableWrapRef.current.scrollLeft;
+    }
+  }
+  function handleStickyScroll() {
+    if (syncingRef.current) { syncingRef.current = false; return; }
+    if (tableWrapRef.current) {
+      syncingRef.current = true;
+      tableWrapRef.current.scrollLeft = stickyBarRef.current.scrollLeft;
+    }
+  }
+
   return (
-    <section className="table-wrap">
-      <table>
+    <div className="table-scroll-region">
+    <section className="table-wrap" ref={tableWrapRef} onScroll={handleTableScroll}>
+      <table ref={tableRef}>
         <thead>
           <tr className="group-row">
             <th></th><th></th><th></th>
@@ -163,6 +199,12 @@ function ReportTable({ rows }) {
         </tbody>
       </table>
     </section>
+    {scrollWidth > 0 && (
+      <div className="sticky-scrollbar" ref={stickyBarRef} onScroll={handleStickyScroll}>
+        <div style={{ width: scrollWidth }} />
+      </div>
+    )}
+    </div>
   );
 }
 

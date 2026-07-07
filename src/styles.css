@@ -160,12 +160,39 @@ body {
 .icon-bg-gray { background: #eef0f3; color: var(--muted); }
 
 /* ---------- Table ---------- */
-.table-wrap {
+.table-scroll-region {
+  position: relative;
   margin-top: 18px;
+}
+
+.table-wrap {
   background: var(--panel-bg);
   border-radius: 12px;
   overflow: auto;
   border: 1px solid var(--border);
+  /* Scrollbar hidden here on purpose — .sticky-scrollbar below is the one
+     visible horizontal scroll control, to avoid showing two at once when
+     the table's bottom edge scrolls into view. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.table-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mirrors the table's horizontal scrollbar, pinned to the bottom of the
+   viewport via position: sticky while the table is in view, so you don't
+   have to scroll back up to pan horizontally. Scroll position is kept in
+   sync with the real table via JS (see ReportTable in App.jsx). */
+.sticky-scrollbar {
+  position: sticky;
+  bottom: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 14px;
+}
+.sticky-scrollbar > div {
+  height: 1px;
 }
 
 table { border-collapse: collapse; width: 100%; min-width: 1500px; }
