@@ -4,11 +4,26 @@
 //   "The \"start lh:runner:gather\" performance mark has not been set"
 // Queuing them one at a time avoids that, and avoids concurrent runs skewing each
 // other's CPU-timing-based metrics (TBT, Speed Index, etc.).
-let tail: Promise<unknown> = Promise.resolve()
+//
+// State lives on globalThis (same pattern as _lib/prisma.ts) because Next.js dev
+// mode hot-reloads this module on file changes, which would otherwise silently
+// reset the queue mid-flight and let two audits briefly run concurrently anyway.
+const globalForAuditQueue = globalThis as unknown as {
+  auditQueueTail?: Promise<unknown>
+  auditInFlightWebsiteIds?: Set<number>
+}
+
+if (!globalForAuditQueue.auditQueueTail) {
+  globalForAuditQueue.auditQueueTail = Promise.resolve()
+}
+if (!globalForAuditQueue.auditInFlightWebsiteIds) {
+  globalForAuditQueue.auditInFlightWebsiteIds = new Set<number>()
+}
 
 export function runExclusive<T>(task: () => Promise<T>): Promise<T> {
+  const tail = globalForAuditQueue.auditQueueTail!
   const result = tail.then(task, task)
-  tail = result.then(
+  globalForAuditQueue.auditQueueTail = result.then(
     () => undefined,
     () => undefined
   )
@@ -21,14 +36,13 @@ export function runExclusive<T>(task: () => Promise<T>): Promise<T> {
 // both see "no recent audit" before either has written its result, so both proceed.
 // This in-memory guard closes that window by rejecting a second request for the same
 // website outright while the first is still in flight.
-const inFlightWebsiteIds = new Set<number>()
-
 export function tryStartAudit(websiteId: number): boolean {
-  if (inFlightWebsiteIds.has(websiteId)) return false
-  inFlightWebsiteIds.add(websiteId)
+  const inFlight = globalForAuditQueue.auditInFlightWebsiteIds!
+  if (inFlight.has(websiteId)) return false
+  inFlight.add(websiteId)
   return true
 }
 
 export function finishAudit(websiteId: number): void {
-  inFlightWebsiteIds.delete(websiteId)
+  globalForAuditQueue.auditInFlightWebsiteIds!.delete(websiteId)
 }

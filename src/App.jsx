@@ -58,7 +58,7 @@ function donutGradient(pct, color) {
 function BrandBar() {
   return (
     <header className="brand-bar">
-      <img className="logo-left" src="/Assets/images.png" alt="VI movies & tv" />
+      <img className="logo-left" src="/Assets/vi-logo.png" alt="VI" />
       <div className="brand-stripe"><span className="s1" /><span className="s2" /><span className="s3" /></div>
       <img className="logo-right" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS Engineering Quality" />
     </header>

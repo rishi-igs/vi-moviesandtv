@@ -43,7 +43,7 @@ body {
   padding: 6px 4px 14px;
 }
 
-.logo-left { height: 56px; border-radius: 12px; }
+.logo-left { height: 56px; }
 .logo-right { height: 46px; }
 
 .brand-stripe {
