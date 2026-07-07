@@ -2,8 +2,6 @@ const API_BASES = ['http://localhost:3002', 'http://127.0.0.1:3002', 'http://loc
 const API_PATHS = ['/api/audit', '/api/audit-legacy']
 const COOLDOWN_MS = 5 * 60 * 1000 // 5 min between same URL
 
-// Only audit pages under this hostname (includes subpaths)
-const TARGET_HOST_SUFFIX = 'kirloskarpumps.com'
 
 // Ensure the auditing toggle defaults to ON for new installs
 function ensureEnabledDefault() {
@@ -165,8 +163,7 @@ async function shouldAudit(url) {
   if (enabled === false) return false
 
   try {
-    const parsed = new URL(url)
-    if (!parsed.hostname.endsWith(TARGET_HOST_SUFFIX)) return false
+    new URL(url)
   } catch (e) {
     return false
   }

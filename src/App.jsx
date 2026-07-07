@@ -65,24 +65,28 @@ function BrandBar() {
   );
 }
 
-function HeroStats({ count }) {
+function HeroStats({ rows }) {
+  const bestPageLoad = minOf(rows.map(r => r.pageLoad));
+  const worstPageLoad = maxOf(rows.map(r => r.pageLoad));
+  const avgPageLoad = avg(rows.map(r => r.pageLoad));
+
   return (
     <div className="hero-stats">
       <div className="stat-card">
         <div className="icon icon-bg-blue"><IconDocument /></div>
-        <div><div className="val">{count}</div><div className="lbl">Pages Tested</div></div>
+        <div><div className="val">{rows.length}</div><div className="lbl">Pages Tested</div></div>
       </div>
       <div className="stat-card">
-        <div className="icon icon-bg-gray"><IconStopwatch /></div>
-        <div><div className="val">{"—"}</div><div className="lbl">Best Page Load</div></div>
+        <div className="icon icon-bg-green"><IconStopwatch /></div>
+        <div><div className="val">{fmt(bestPageLoad, 2, " s")}</div><div className="lbl">Best Page Load</div></div>
       </div>
       <div className="stat-card">
-        <div className="icon icon-bg-gray"><IconStopwatch /></div>
-        <div><div className="val">{"—"}</div><div className="lbl">Worst Page Load</div></div>
+        <div className="icon icon-bg-red"><IconStopwatch /></div>
+        <div><div className="val">{fmt(worstPageLoad, 2, " s")}</div><div className="lbl">Worst Page Load</div></div>
       </div>
       <div className="stat-card">
-        <div className="icon icon-bg-gray"><IconBarChart /></div>
-        <div><div className="val">{"—"}</div><div className="lbl">Avg Page Load</div></div>
+        <div className="icon icon-bg-blue"><IconBarChart /></div>
+        <div><div className="val">{fmt(avgPageLoad, 2, " s")}</div><div className="lbl">Avg Page Load</div></div>
       </div>
     </div>
   );
@@ -103,7 +107,7 @@ function Hero({ rows, lastUpdated }) {
           </div>
         </div>
       </div>
-      <HeroStats count={rows.length} />
+      <HeroStats rows={rows} />
     </section>
   );
 }
@@ -168,6 +172,7 @@ function OverviewPanel({ rows }) {
   const worstLcp = maxOf(rows.map(r => r.lcp));
   const highTbt = maxOf(rows.map(r => r.tbt));
   const highSi = maxOf(rows.map(r => r.si));
+  const highPageLoad = maxOf(rows.map(r => r.pageLoad));
 
   const items = [
     { icon: <IconStopwatch />, bg: "icon-bg-green", val: fmt(bestFcp, 1, " s"), lbl: "Best FCP (Fastest)" },
@@ -175,7 +180,7 @@ function OverviewPanel({ rows }) {
     { icon: <IconImage />, bg: "icon-bg-red", val: fmt(worstLcp, 1, " s"), lbl: "Worst LCP (Slowest)" },
     { icon: <IconHand />, bg: "icon-bg-red", val: fmtMs(highTbt), lbl: "Highest TBT" },
     { icon: <IconGauge />, bg: "icon-bg-navy", val: fmt(highSi, 1, " s"), lbl: "Highest Speed Index" },
-    { icon: <IconStopwatch />, bg: "icon-bg-gray", val: "—", lbl: "Highest Page Load" }
+    { icon: <IconStopwatch />, bg: "icon-bg-red", val: fmt(highPageLoad, 2, " s"), lbl: "Highest Page Load" }
   ];
 
   return (
@@ -222,23 +227,46 @@ function ScoreDistributionPanel({ rows }) {
   );
 }
 
-function RatingPanel() {
-  // Page Load Time has no data source yet — placeholder chrome, filled in once live.
+function RatingPanel({ rows }) {
+  const times = rows.map(r => r.pageLoad).filter(v => v != null && !isNaN(v));
+  const total = times.length;
+  const fast = times.filter(t => t < 1).length;
+  const moderate = times.filter(t => t >= 1 && t <= 2).length;
+  const slow = times.filter(t => t > 2).length;
+
+  const pct = n => (total ? Math.round((n / total) * 100) : 0);
+  const fastPct = pct(fast);
+  const moderatePct = pct(moderate);
+
+  const fastDeg = total ? (fast / total) * 360 : 0;
+  const moderateDeg = total ? (moderate / total) * 360 : 0;
+  const donutBg = total
+    ? `conic-gradient(var(--good) 0deg ${fastDeg}deg, var(--warn) ${fastDeg}deg ${fastDeg + moderateDeg}deg, var(--bad) ${fastDeg + moderateDeg}deg 360deg)`
+    : "#e7eaf0";
+
   return (
     <div className="panel">
       <div className="panel-title">Performance Rating (Page Load Time)</div>
       <div className="rating-body">
-        <div className="rating-donut" style={{ background: "#e7eaf0" }}>
+        <div className="rating-donut" style={{ background: donutBg }}>
           <div className="center">
-            <div className="pct no-data">No data</div>
-            <div className="sub">yet</div>
+            {total ? (
+              <>
+                <div className="pct">{fastPct}%</div>
+                <div className="sub">Fast</div>
+              </>
+            ) : (
+              <>
+                <div className="pct no-data">No data</div>
+                <div className="sub">yet</div>
+              </>
+            )}
           </div>
         </div>
         <div className="rating-legend">
-          <div className="row"><span className="dot" style={{ background: "var(--good)" }} /><span className="txt">Fast (&lt; 1s)</span><span className="count">{"—"}</span></div>
-          <div className="row"><span className="dot" style={{ background: "var(--warn)" }} /><span className="txt">Moderate (1s - 2s)</span><span className="count">{"—"}</span></div>
-          <div className="row"><span className="dot" style={{ background: "var(--bad)" }} /><span className="txt">Slow (&gt; 2s)</span><span className="count">{"—"}</span></div>
-          <div className="no-data-note">Awaiting a page-load-time data source</div>
+          <div className="row"><span className="dot" style={{ background: "var(--good)" }} /><span className="txt">Fast (&lt; 1s)</span><span className="count">{total ? `${fast} pages (${fastPct}%)` : "—"}</span></div>
+          <div className="row"><span className="dot" style={{ background: "var(--warn)" }} /><span className="txt">Moderate (1s - 2s)</span><span className="count">{total ? `${moderate} pages (${moderatePct}%)` : "—"}</span></div>
+          <div className="row"><span className="dot" style={{ background: "var(--bad)" }} /><span className="txt">Slow (&gt; 2s)</span><span className="count">{total ? `${slow} pages (${pct(slow)}%)` : "—"}</span></div>
         </div>
       </div>
     </div>
@@ -251,12 +279,21 @@ export default function App() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    loadDashboardRows()
-      .then(data => {
-        setRows(data);
-        setLastUpdated(new Date().toLocaleString());
-      })
-      .catch(e => setError(e.message));
+    function load() {
+      loadDashboardRows()
+        .then(data => {
+          setRows(data);
+          setLastUpdated(new Date().toLocaleString());
+          setError(null);
+        })
+        .catch(e => setError(e.message));
+    }
+    load();
+    // Poll in the background so newly-completed audits (e.g. from the Chrome
+    // extension or the Next.js app's manual "Run Audit") show up without a
+    // manual refresh.
+    const interval = setInterval(load, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -271,7 +308,7 @@ export default function App() {
           <section className="summary-grid">
             <OverviewPanel rows={rows} />
             <ScoreDistributionPanel rows={rows} />
-            <RatingPanel />
+            <RatingPanel rows={rows} />
           </section>
         </>
       )}

@@ -20,24 +20,8 @@ export default function Home() {
   const [websites, setWebsites] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    const fetchWebsites = async () => {
-      setLoading(true)
-      try {
-        const res = await fetch('/api/websites')
-        if (res.ok) {
-          const data = await res.json()
-          setWebsites(data)
-        }
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchWebsites()
-  }, [])
-
-  const handleAuditComplete = useCallback(async () => {
-    setLoading(true)
+  const fetchWebsites = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true)
     try {
       const res = await fetch('/api/websites')
       if (res.ok) {
@@ -45,9 +29,22 @@ export default function Home() {
         setWebsites(data)
       }
     } finally {
-      setLoading(false)
+      if (!opts?.silent) setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    fetchWebsites()
+    // Poll in the background so newly-completed audits (e.g. from the Chrome
+    // extension auditing whatever you're browsing) show up without a manual
+    // refresh. Silent — no loading spinner on each tick.
+    const interval = setInterval(() => fetchWebsites({ silent: true }), 10000)
+    return () => clearInterval(interval)
+  }, [fetchWebsites])
+
+  const handleAuditComplete = useCallback(() => {
+    fetchWebsites()
+  }, [fetchWebsites])
 
   const reportRows = useMemo(() => {
     return websites
@@ -83,7 +80,7 @@ export default function Home() {
   if (loading) {
     reportContent = <p className="text-center text-slate-500 py-12">Loading audits...</p>
   } else if (reportRows.length === 0) {
-    reportContent = <p className="text-center text-slate-500 py-12">No kirloskarpumps audit data available yet.</p>
+    reportContent = <p className="text-center text-slate-500 py-12">No Lighthouse Performance Tracker audit data available yet.</p>
   } else {
     reportContent = (
       <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-slate-50 shadow-inner shadow-slate-900/5">
@@ -134,9 +131,9 @@ export default function Home() {
           <div className="flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs uppercase tracking-[0.35em] text-cyan-300/80">Website Performance Report - PROD</p>
-              <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl text-white">kirloskarpumps</h1>
+              <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl text-white">Lighthouse Performance Tracker</h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
-                Lighthouse performance snapshot for the kirloskarpumps website, including latest site audits, load metrics, and accessibility insights.
+                Lighthouse performance snapshot for the Lighthouse Performance Tracker website, including latest site audits, load metrics, and accessibility insights.
               </p>
             </div>
 
@@ -176,9 +173,9 @@ export default function Home() {
           <section className="rounded-3xl bg-white p-6 shadow-sm shadow-slate-900/5">
             <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-200/70">
               <div>
-                <h2 className="text-xl font-semibold text-slate-900">Run a kirloskarpumps audit</h2>
+                <h2 className="text-xl font-semibold text-slate-900">Run a Lighthouse Performance Tracker audit</h2>
                 <p className="mt-2 text-sm text-slate-500">
-                  Enter any kirloskarpumps page URL to save the latest Lighthouse report.
+                  Enter any Lighthouse Performance Tracker page URL to save the latest Lighthouse report.
                 </p>
               </div>
             </div>
@@ -204,7 +201,7 @@ export default function Home() {
               </div>
               <div className="rounded-3xl bg-slate-950/90 p-4 ring-1 ring-slate-800">
                 <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Data target</p>
-                <p className="mt-3 text-2xl font-semibold text-white">kirloskarpumps</p>
+                <p className="mt-3 text-2xl font-semibold text-white">Lighthouse Performance Tracker</p>
               </div>
             </div>
           </section>
@@ -213,9 +210,9 @@ export default function Home() {
         <section className="mt-10 rounded-3xl bg-white p-6 shadow-sm shadow-slate-900/5">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-slate-900">kirloskarpumps page performance</h2>
+              <h2 className="text-xl font-semibold text-slate-900">Lighthouse Performance Tracker page performance</h2>
               <p className="mt-2 text-sm text-slate-500">
-                Recent audited pages for kirloskarpumps with Lighthouse metrics and load performance.
+                Recent audited pages for Lighthouse Performance Tracker with Lighthouse metrics and load performance.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">

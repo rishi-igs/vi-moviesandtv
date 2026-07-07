@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/app/_lib/prisma'
 import { runLighthouseAudit as runLighthouseDefault } from '@/app/_lib/lighthouse-runner'
+import { runExclusive, tryStartAudit, finishAudit } from '@/app/_lib/audit-queue'
 
 const USE_PLAYWRIGHT = process.env.USE_PLAYWRIGHT === '1'
 
@@ -67,11 +68,18 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  if (!tryStartAudit(website.id)) {
+    return NextResponse.json(
+      { message: 'Skipped — audit already in progress', website },
+      { headers: corsHeaders }
+    )
+  }
+
   let audit
   try {
-    const result = USE_PLAYWRIGHT
-      ? await runLighthousePlaywright(normalizedUrl)
-      : await runLighthouseDefault(normalizedUrl)
+    const result = await runExclusive(() =>
+      USE_PLAYWRIGHT ? runLighthousePlaywright(normalizedUrl) : runLighthouseDefault(normalizedUrl)
+    )
 
     audit = await prisma.audit.create({
       data: {
@@ -105,6 +113,8 @@ export async function POST(request: NextRequest) {
       { error: err instanceof Error ? err.message : 'Unknown error' },
       { status: 500, headers: corsHeaders }
     )
+  } finally {
+    finishAudit(website.id)
   }
 
   return NextResponse.json({ website, audit }, { headers: corsHeaders })

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Lighthouse Auto-Audit",
+  "name": "Lighthouse Performance Tracker",
   "version": "1.0.0",
   "description": "Automatically runs Lighthouse audits on every site you visit and tracks results in your dashboard",
   "permissions": [
@@ -10,13 +10,12 @@
     "notifications"
   ],
   "host_permissions": [
-    "http://localhost/*",
-    "http://127.0.0.1/*",
+    "http://*/*",
     "https://*/*"
   ],
   "content_scripts": [
     {
-      "matches": ["*://*.kirloskarpumps.com/*", "*://kirloskarpumps.com/*"],
+      "matches": ["<all_urls>"],
       "js": ["content-script.js"],
       "run_at": "document_idle"
     }
@@ -26,7 +25,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Lighthouse Auto-Audit",
+    "default_title": "Lighthouse Performance Tracker",
     "default_icon": {
       "16": "icon16.png",
       "48": "icon48.png",
