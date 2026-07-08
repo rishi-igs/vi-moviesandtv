@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import lighthouse from 'lighthouse'
 import * as chromeLauncher from 'chrome-launcher'
-import type { LighthouseResult } from './types'
+import type { LighthouseResult } from '@/app/_types'
 import http from 'http'
 import https from 'https'
 
@@ -89,13 +89,20 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
 
   try {
     const result = await lighthouse(url, {
-      logLevel: 'error',
+      logLevel: 'info',
       output: 'json',
       port: chrome.port,
       onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+    }, {
+      extends: 'lighthouse:default',
+      settings: {
+        formFactor: 'desktop',
+        screenEmulation: { mobile: false, width: 1350, height: 940, deviceScaleFactor: 1, disabled: false },
+        throttling: { rttMs: 40, throughputKbps: 10240, cpuSlowdownMultiplier: 1 },
+      },
     })
 
-    if (!result) {
+    if (!result?.lhr) {
       throw new Error('Lighthouse returned no result')
     }
 
@@ -112,18 +119,22 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
       cls: lhr.audits['cumulative-layout-shift']?.numericValue ?? null,
       tbt: lhr.audits['total-blocking-time']?.numericValue ?? null,
       speedIndex: lhr.audits['speed-index']?.numericValue ?? null,
+      tti: lhr.audits['interactive']?.numericValue ?? null,
     }
+  } catch (error) {
+    console.error('Lighthouse runner error:', error)
+    throw error
   } finally {
     try {
       await killChromeInstance(chrome)
-    } catch {
-      // Ignore cleanup failures.
+    } catch (cleanupError) {
+      console.warn('Lighthouse cleanup error:', cleanupError)
     }
 
     try {
       fs.rmSync(userDataDir, { recursive: true, force: true })
-    } catch {
-      // Ignore cleanup failures.
+    } catch (cleanupError) {
+      console.warn('Failed to remove Chrome user data dir:', cleanupError)
     }
   }
 }
