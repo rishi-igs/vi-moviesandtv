@@ -383,6 +383,7 @@ td.col-url a span { overflow: hidden; text-overflow: ellipsis; }
 }
 .bulk-run-btn:disabled { opacity: 0.6; cursor: default; }
 .bulk-audit-summary { font-size: 12px; color: var(--text-500); }
+.bulk-audit-error { font-size: 12px; color: var(--bad); margin-top: 8px; }
 .bulk-audit-list { margin-top: 12px; max-height: 240px; overflow-y: auto; }
 .bulk-audit-item {
   display: flex; align-items: center; gap: 10px;

@@ -8,16 +8,18 @@
 // State lives on globalThis (same pattern as _lib/prisma.ts) because Next.js dev
 // mode hot-reloads this module on file changes, which would otherwise silently
 // reset the queue mid-flight and let two audits briefly run concurrently anyway.
+type InFlightEntry = { url: string; startedAt: number }
+
 const globalForAuditQueue = globalThis as unknown as {
   auditQueueTail?: Promise<unknown>
-  auditInFlightWebsiteIds?: Set<number>
+  auditInFlight?: Map<number, InFlightEntry>
 }
 
 if (!globalForAuditQueue.auditQueueTail) {
   globalForAuditQueue.auditQueueTail = Promise.resolve()
 }
-if (!globalForAuditQueue.auditInFlightWebsiteIds) {
-  globalForAuditQueue.auditInFlightWebsiteIds = new Set<number>()
+if (!globalForAuditQueue.auditInFlight) {
+  globalForAuditQueue.auditInFlight = new Map<number, InFlightEntry>()
 }
 
 export function runExclusive<T>(task: () => Promise<T>): Promise<T> {
@@ -36,13 +38,22 @@ export function runExclusive<T>(task: () => Promise<T>): Promise<T> {
 // both see "no recent audit" before either has written its result, so both proceed.
 // This in-memory guard closes that window by rejecting a second request for the same
 // website outright while the first is still in flight.
-export function tryStartAudit(websiteId: number): boolean {
-  const inFlight = globalForAuditQueue.auditInFlightWebsiteIds!
+export function tryStartAudit(websiteId: number, url: string): boolean {
+  const inFlight = globalForAuditQueue.auditInFlight!
   if (inFlight.has(websiteId)) return false
-  inFlight.add(websiteId)
+  inFlight.set(websiteId, { url, startedAt: Date.now() })
   return true
 }
 
 export function finishAudit(websiteId: number): void {
-  globalForAuditQueue.auditInFlightWebsiteIds!.delete(websiteId)
+  globalForAuditQueue.auditInFlight!.delete(websiteId)
+}
+
+// Server-truth snapshot of what's currently auditing, so the UI can show live
+// progress that survives a page refresh instead of relying on client state.
+export function getInFlightAudits(): (InFlightEntry & { websiteId: number })[] {
+  return [...globalForAuditQueue.auditInFlight!.entries()].map(([websiteId, entry]) => ({
+    websiteId,
+    ...entry,
+  }))
 }

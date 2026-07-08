@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
-import { loadDashboardRows } from "./data.js";
+import { loadDashboardRows, loadInFlightAudits, loadCurrentBatch, startBulkAudit } from "./data.js";
 
 // ---------------------------------------------------------------------------
 // Icons (inline SVG components, stroke-based, no external icon library)
@@ -112,47 +112,64 @@ function Hero({ rows, lastUpdated }) {
   );
 }
 
-function BulkAuditPanel({ onAuditComplete }) {
+function InFlightPanel({ items }) {
+  if (!items.length) return null;
+  return (
+    <div className="panel in-flight-panel">
+      <div className="panel-title">Currently Auditing ({items.length})</div>
+      <div className="panel-body">
+        <div className="bulk-audit-list">
+          {items.map(it => (
+            <div className="bulk-audit-item" key={it.websiteId}>
+              <span className="bulk-audit-status muted">running</span>
+              <span className="bulk-audit-url" title={it.url}>{it.url}</span>
+              <span className="bulk-audit-msg">{Math.max(0, Math.round((Date.now() - it.startedAt) / 1000))}s elapsed</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BulkAuditPanel() {
   const [text, setText] = useState("");
-  const [items, setItems] = useState([]);
-  const [running, setRunning] = useState(false);
+  const [batch, setBatch] = useState(null);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState(null);
 
   function parseUrls(raw) {
     return [...new Set(raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean))];
   }
 
-  function updateItem(index, patch) {
-    setItems(prev => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
-  }
+  useEffect(() => {
+    function poll() {
+      loadCurrentBatch().then(setBatch).catch(() => {});
+    }
+    poll();
+    // Polls the server-tracked batch rather than driving progress locally, so
+    // this reflects the true state even after a refresh or a closed tab.
+    const interval = setInterval(poll, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const items = batch?.items ?? [];
+  const running = items.some(it => it.status === "queued" || it.status === "running");
 
   async function runBulk() {
     const urls = parseUrls(text);
     if (!urls.length) return;
-    setRunning(true);
-    setItems(urls.map(url => ({ url, status: "queued", message: "" })));
-
-    for (let i = 0; i < urls.length; i++) {
-      updateItem(i, { status: "running" });
-      try {
-        const res = await fetch("/api/audit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: urls[i] })
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          updateItem(i, { status: "error", message: data.error || `HTTP ${res.status}` });
-        } else if (data.message) {
-          updateItem(i, { status: "skipped", message: data.message });
-        } else {
-          updateItem(i, { status: "done", message: "Audited" });
-        }
-      } catch (e) {
-        updateItem(i, { status: "error", message: e.message });
-      }
-      onAuditComplete?.();
+    setStarting(true);
+    setStartError(null);
+    try {
+      const newBatch = await startBulkAudit(urls);
+      setBatch(newBatch);
+      setText("");
+    } catch (e) {
+      setStartError(e.message);
+    } finally {
+      setStarting(false);
     }
-    setRunning(false);
   }
 
   const statusClass = { done: "good", error: "bad", skipped: "warn", running: "muted", queued: "muted" };
@@ -165,12 +182,12 @@ function BulkAuditPanel({ onAuditComplete }) {
         <textarea
           value={text}
           onChange={e => setText(e.target.value)}
-          placeholder={"Paste URLs, one per line"}
-          disabled={running}
+          placeholder={"Paste myvi.in URLs, one per line\nhttps://moviesandtv.myvi.in/\nhttps://moviesandtv.myvi.in/originals"}
+          disabled={running || starting}
         />
         <div className="bulk-audit-actions">
-          <button className="bulk-run-btn" onClick={runBulk} disabled={running || !text.trim()}>
-            {running ? `Auditing ${doneCount}/${items.length}...` : "Run Bulk Audit"}
+          <button className="bulk-run-btn" onClick={runBulk} disabled={running || starting || !text.trim()}>
+            {running ? `Auditing ${doneCount}/${items.length}...` : starting ? "Starting..." : "Run Bulk Audit"}
           </button>
           {!running && items.length > 0 && (
             <span className="bulk-audit-summary">
@@ -178,6 +195,7 @@ function BulkAuditPanel({ onAuditComplete }) {
             </span>
           )}
         </div>
+        {startError && <div className="bulk-audit-error">{startError}</div>}
         {items.length > 0 && (
           <div className="bulk-audit-list">
             {items.map((it, i) => (
@@ -189,7 +207,7 @@ function BulkAuditPanel({ onAuditComplete }) {
             ))}
           </div>
         )}
-        {/* <p className="no-data-note">Only myvi.in URLs are audited — anything else is rejected automatically. Audits run one at a time and take ~1-2 min each.</p> */}
+        <p className="no-data-note">Only myvi.in URLs are audited — anything else is rejected automatically. Audits run one at a time (~1-2 min each) on the server, so progress here survives a refresh or a closed tab.</p>
       </div>
     </div>
   );
@@ -400,6 +418,7 @@ function RatingPanel({ rows }) {
 
 export default function App() {
   const [rows, setRows] = useState([]);
+  const [inFlight, setInFlight] = useState([]);
   const [lastUpdated, setLastUpdated] = useState("—");
   const [error, setError] = useState(null);
 
@@ -411,6 +430,9 @@ export default function App() {
         setError(null);
       })
       .catch(e => setError(e.message));
+    // Server-truth in-flight status — independent of any tab's local state,
+    // so it still shows correctly after a refresh.
+    loadInFlightAudits().then(setInFlight);
   }
 
   useEffect(() => {
@@ -426,7 +448,8 @@ export default function App() {
     <div className="page">
       <BrandBar />
       <Hero rows={rows} lastUpdated={lastUpdated} />
-      <BulkAuditPanel onAuditComplete={load} />
+      <InFlightPanel items={inFlight} />
+      <BulkAuditPanel />
       {error ? (
         <div style={{ color: "var(--bad)", textAlign: "center", padding: 20 }}>Failed to load data: {error}</div>
       ) : (

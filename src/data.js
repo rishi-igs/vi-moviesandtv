@@ -52,3 +52,33 @@ export async function loadDashboardRows() {
     .filter(Boolean)
     .sort((a, b) => new Date(b.auditedAt) - new Date(a.auditedAt));
 }
+
+// Server-truth "what's auditing right now" — backed by the server's in-memory
+// queue, not client state, so it survives a page refresh.
+export async function loadInFlightAudits() {
+  const res = await fetch("/api/audit-status", { cache: "no-store" });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.inFlight ?? [];
+}
+
+// The current/most recent bulk-audit batch. The server drives the batch to
+// completion itself, so polling this reflects true progress even after a
+// refresh or a closed tab.
+export async function loadCurrentBatch() {
+  const res = await fetch("/api/audit-batch", { cache: "no-store" });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.batch ?? null;
+}
+
+export async function startBulkAudit(urls) {
+  const res = await fetch("/api/audit-batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ urls })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data.batch;
+}
