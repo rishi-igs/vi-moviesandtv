@@ -86,6 +86,13 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
       output: 'json',
       port,
       onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+    }, {
+      extends: 'lighthouse:default',
+      settings: {
+        formFactor: 'desktop',
+        screenEmulation: { mobile: false, width: 1350, height: 940, deviceScaleFactor: 1, disabled: false },
+        throttling: { rttMs: 40, throughputKbps: 10240, cpuSlowdownMultiplier: 1 },
+      },
     })
 
     if (!result?.lhr) throw new Error('Lighthouse returned no result')
