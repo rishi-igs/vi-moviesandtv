@@ -352,6 +352,48 @@ td.col-url a span { overflow: hidden; text-overflow: ellipsis; }
   font-style: italic;
 }
 
+/* ---------- Bulk audit panel ---------- */
+.bulk-audit-panel { margin-top: 18px; }
+.bulk-audit-panel textarea {
+  width: 100%;
+  min-height: 90px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  resize: vertical;
+}
+.bulk-audit-actions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.bulk-run-btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: none;
+  background: var(--navy-800);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bulk-run-btn:disabled { opacity: 0.6; cursor: default; }
+.bulk-audit-summary { font-size: 12px; color: var(--text-500); }
+.bulk-audit-list { margin-top: 12px; max-height: 240px; overflow-y: auto; }
+.bulk-audit-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0; border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.bulk-audit-item:last-child { border-bottom: none; }
+.bulk-audit-status { min-width: 68px; text-transform: capitalize; }
+.bulk-audit-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-audit-msg { color: var(--text-500); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 footer.credit {
   text-align: center;
   color: var(--text-500);

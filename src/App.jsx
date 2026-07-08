@@ -112,6 +112,89 @@ function Hero({ rows, lastUpdated }) {
   );
 }
 
+function BulkAuditPanel({ onAuditComplete }) {
+  const [text, setText] = useState("");
+  const [items, setItems] = useState([]);
+  const [running, setRunning] = useState(false);
+
+  function parseUrls(raw) {
+    return [...new Set(raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean))];
+  }
+
+  function updateItem(index, patch) {
+    setItems(prev => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
+  }
+
+  async function runBulk() {
+    const urls = parseUrls(text);
+    if (!urls.length) return;
+    setRunning(true);
+    setItems(urls.map(url => ({ url, status: "queued", message: "" })));
+
+    for (let i = 0; i < urls.length; i++) {
+      updateItem(i, { status: "running" });
+      try {
+        const res = await fetch("/api/audit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: urls[i] })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          updateItem(i, { status: "error", message: data.error || `HTTP ${res.status}` });
+        } else if (data.message) {
+          updateItem(i, { status: "skipped", message: data.message });
+        } else {
+          updateItem(i, { status: "done", message: "Audited" });
+        }
+      } catch (e) {
+        updateItem(i, { status: "error", message: e.message });
+      }
+      onAuditComplete?.();
+    }
+    setRunning(false);
+  }
+
+  const statusClass = { done: "good", error: "bad", skipped: "warn", running: "muted", queued: "muted" };
+  const doneCount = items.filter(i => i.status === "done" || i.status === "skipped" || i.status === "error").length;
+
+  return (
+    <div className="panel bulk-audit-panel">
+      <div className="panel-title">Bulk Audit</div>
+      <div className="panel-body">
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder={"Paste URLs, one per line"}
+          disabled={running}
+        />
+        <div className="bulk-audit-actions">
+          <button className="bulk-run-btn" onClick={runBulk} disabled={running || !text.trim()}>
+            {running ? `Auditing ${doneCount}/${items.length}...` : "Run Bulk Audit"}
+          </button>
+          {!running && items.length > 0 && (
+            <span className="bulk-audit-summary">
+              {items.filter(i => i.status === "done").length} audited, {items.filter(i => i.status === "skipped").length} skipped, {items.filter(i => i.status === "error").length} failed
+            </span>
+          )}
+        </div>
+        {items.length > 0 && (
+          <div className="bulk-audit-list">
+            {items.map((it, i) => (
+              <div className="bulk-audit-item" key={i}>
+                <span className={`bulk-audit-status ${statusClass[it.status]}`}>{it.status}</span>
+                <span className="bulk-audit-url" title={it.url}>{it.url}</span>
+                {it.message && <span className="bulk-audit-msg" title={it.message}>{it.message}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* <p className="no-data-note">Only myvi.in URLs are audited — anything else is rejected automatically. Audits run one at a time and take ~1-2 min each.</p> */}
+      </div>
+    </div>
+  );
+}
+
 function ReportTable({ rows }) {
   const tableWrapRef = useRef(null);
   const stickyBarRef = useRef(null);
@@ -320,16 +403,17 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState("—");
   const [error, setError] = useState(null);
 
+  function load() {
+    loadDashboardRows()
+      .then(data => {
+        setRows(data);
+        setLastUpdated(new Date().toLocaleString());
+        setError(null);
+      })
+      .catch(e => setError(e.message));
+  }
+
   useEffect(() => {
-    function load() {
-      loadDashboardRows()
-        .then(data => {
-          setRows(data);
-          setLastUpdated(new Date().toLocaleString());
-          setError(null);
-        })
-        .catch(e => setError(e.message));
-    }
     load();
     // Poll in the background so newly-completed audits (e.g. from the Chrome
     // extension or the Next.js app's manual "Run Audit") show up without a
@@ -342,6 +426,7 @@ export default function App() {
     <div className="page">
       <BrandBar />
       <Hero rows={rows} lastUpdated={lastUpdated} />
+      <BulkAuditPanel onAuditComplete={load} />
       {error ? (
         <div style={{ color: "var(--bad)", textAlign: "center", padding: 20 }}>Failed to load data: {error}</div>
       ) : (

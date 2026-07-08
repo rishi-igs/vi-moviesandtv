@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Lighthouse Performance Tracker",
   "version": "1.0.0",
-  "description": "Automatically runs Lighthouse audits on every site you visit and tracks results in your dashboard",
+  "description": "Automatically runs Lighthouse audits on the VI movies & tv website and tracks results in your dashboard",
   "permissions": [
     "tabs",
     "storage",
@@ -10,12 +10,12 @@
     "notifications"
   ],
   "host_permissions": [
-    "http://*/*",
-    "https://*/*"
+    "http://*.myvi.in/*",
+    "https://*.myvi.in/*"
   ],
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["*://*.myvi.in/*"],
       "js": ["content-script.js"],
       "run_at": "document_idle"
     }

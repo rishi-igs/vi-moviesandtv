@@ -14,6 +14,15 @@ async function runLighthousePlaywright(url: string) {
 
 const COOLDOWN_MS = 5 * 60 * 1000
 
+// Server-side gate — the extension also restricts to this domain, but that's
+// client-side and easy to bypass (dashboard's manual input, stray curl, un-
+// reloaded extension). This is the authoritative check for this tool.
+const TARGET_HOST_SUFFIX = 'myvi.in'
+
+function isTargetHost(hostname: string): boolean {
+  return hostname === TARGET_HOST_SUFFIX || hostname.endsWith(`.${TARGET_HOST_SUFFIX}`)
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -40,6 +49,13 @@ export async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400, headers: corsHeaders })
     }
+  }
+
+  if (!isTargetHost(auditUrl.hostname)) {
+    return NextResponse.json(
+      { error: `Only ${TARGET_HOST_SUFFIX} URLs can be audited by this tool` },
+      { status: 403, headers: corsHeaders }
+    )
   }
 
   const normalizedUrl = auditUrl.toString()

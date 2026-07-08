@@ -2,6 +2,21 @@ const API_BASES = ['http://localhost:3002', 'http://127.0.0.1:3002', 'http://loc
 const API_PATHS = ['/api/audit', '/api/audit-legacy']
 const COOLDOWN_MS = 5 * 60 * 1000 // 5 min between same URL
 
+// Only audit the VI site and its subdomains — host_permissions/content_scripts
+// restrict where content scripts run, but NOT what webNavigation events the
+// background worker sees, so this check is the real gate against auditing
+// whatever else the tester happens to be browsing.
+const TARGET_HOST_SUFFIX = 'myvi.in'
+
+function isTargetHost(url) {
+  try {
+    const hostname = new URL(url).hostname
+    return hostname === TARGET_HOST_SUFFIX || hostname.endsWith(`.${TARGET_HOST_SUFFIX}`)
+  } catch (e) {
+    return false
+  }
+}
+
 
 // Ensure the auditing toggle defaults to ON for new installs
 function ensureEnabledDefault() {
@@ -162,11 +177,7 @@ async function shouldAudit(url) {
 
   if (enabled === false) return false
 
-  try {
-    new URL(url)
-  } catch (e) {
-    return false
-  }
+  if (!isTargetHost(url)) return false
 
   const lastRun = auditHistory[url]
   if (lastRun && Date.now() - lastRun < COOLDOWN_MS) return false
@@ -181,6 +192,7 @@ chrome.runtime.onMessage.addListener(async (message, sender) => {
   if (!message || !message.type) return
   if (message.type === 'manual-audit' && message.url) {
     const tabId = sender?.tab?.id
+    if (!isTargetHost(message.url)) return
     if (message.bypassCooldown) {
       // update auditHistory to allow immediate run
       const { auditHistory = {} } = await chrome.storage.local.get('auditHistory')
