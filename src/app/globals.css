@@ -264,6 +264,32 @@ tbody tr:nth-child(even) { background: #fafbfc; }
 tbody tr:nth-child(odd) { background: var(--panel-bg); }
 tbody tr:hover { background: #f5f7fb; }
 
+/* ---------- Bulk load bar ---------- */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 4px 0 16px;
+}
+.bulk-btn {
+  background: var(--acc-blue);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+.bulk-btn:hover:not(:disabled) { background: #1d4ed8; }
+.bulk-btn:disabled { opacity: 0.7; cursor: default; }
+.bulk-status { font-size: 13px; color: var(--text-500); }
+.bulk-results { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.bulk-ok { color: var(--good); font-weight: 600; }
+.bulk-err { color: var(--bad); font-weight: 600; }
+
 /* ---------- Bottom panels row ---------- */
 .bottom-panels {
   display: flex;

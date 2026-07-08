@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,6 +70,15 @@ const msToSec = (v: number | null | undefined) => v == null || isNaN(v) ? null :
 // Page-load-time (TTI) rating buckets, in milliseconds
 const PLT_FAST_MS = 1000   // < 1s
 const PLT_SLOW_MS = 2000   // > 2s
+
+// URLs audited by the bulk "Load" button for quick end-to-end testing.
+const BULK_TARGETS = [
+  'https://moviesandtv.myvi.in/',
+  'https://moviesandtv.myvi.in/sports',
+  'https://moviesandtv.myvi.in/originals',
+  'https://moviesandtv.myvi.in/home',
+  'https://moviesandtv.myvi.in/movies',
+]
 
 // ---------------------------------------------------------------------------
 // Donut charts
@@ -378,10 +387,42 @@ export default function Home() {
   const [rows, setRows] = useState<any[]>([])
   const [lastUpdated, setLastUpdated] = useState('—')
   const [loading, setLoading] = useState(true)
+  const [bulkRunning, setBulkRunning] = useState(false)
+  const [bulkResults, setBulkResults] = useState<{ url: string; ok: boolean; msg: string }[] | null>(null)
+
+  const loadData = useCallback(async () => {
+    try {
+      const res = await fetch('/api/websites')
+      if (!res.ok) return
+      const websites = await res.json()
+      const rowData = websites
+        .filter((site: any) => site.url && site.url.includes('moviesandtv.myvi.in'))
+        .map((site: any) => {
+          const latestAudit = site.audits?.[0]
+          const metric = latestAudit?.metrics?.[0]
+          const pageName = site.url ? new URL(site.url).pathname.replace(/\/$/, '') || '/' : site.title || site.url
+          return {
+            id: site.id,
+            pageName,
+            url: site.url,
+            audit: latestAudit,
+            metric,
+            status: latestAudit?.status ?? 'pending',
+          }
+        })
+
+      const updatedAt = new Date().toLocaleString()
+      setRows(rowData)
+      setLastUpdated(updatedAt)
+      saveCachedRows(rowData, updatedAt)
+      setLoading(false)
+    } catch (error) {
+      console.error('Failed to load websites:', error)
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    let cancelled = false
-
     const cached = loadCachedRows()
     if (cached.rows.length > 0) {
       setRows(cached.rows)
@@ -389,46 +430,43 @@ export default function Home() {
       setLoading(false)
     }
 
-    const fetchData = async () => {
-      try {
-        const res = await fetch('/api/websites')
-        if (res.ok && !cancelled) {
-          const websites = await res.json()
-          const rowData = websites
-            .filter((site: any) => site.url && site.url.includes('moviesandtv.myvi.in'))
-            .map((site: any) => {
-              const latestAudit = site.audits?.[0]
-              const metric = latestAudit?.metrics?.[0]
-              const pageName = site.url ? new URL(site.url).pathname.replace(/\/$/, '') || '/' : site.title || site.url
-              return {
-                id: site.id,
-                pageName,
-                url: site.url,
-                audit: latestAudit,
-                metric,
-                status: latestAudit?.status ?? 'pending',
-              }
-            })
-
-          const updatedAt = new Date().toLocaleString()
-          setRows(rowData)
-          setLastUpdated(updatedAt)
-          saveCachedRows(rowData, updatedAt)
-          if (!cancelled) setLoading(false)
-        }
-      } catch (error) {
-        console.error('Failed to load websites:', error)
-        if (!cancelled) setLoading(false)
-      }
+    let cancelled = false
+    const poll = async () => {
+      if (cancelled) return
+      await loadData()
     }
-
-    fetchData()
-    const interval = setInterval(fetchData, 15000)
+    poll()
+    const interval = setInterval(poll, 15000)
     return () => {
       cancelled = true
       clearInterval(interval)
     }
-  }, [])
+  }, [loadData])
+
+  // Fire audits for all bulk targets, then refresh so the table fills in as
+  // each background audit finishes (the dashboard also polls every 15s).
+  const runBulkAudits = useCallback(async () => {
+    setBulkRunning(true)
+    setBulkResults(null)
+    const results = await Promise.all(
+      BULK_TARGETS.map(async (url) => {
+        try {
+          const res = await fetch('/api/audit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
+          })
+          const data = await res.json().catch(() => ({}))
+          return { url, ok: res.ok, msg: data.message || (res.ok ? 'queued' : `HTTP ${res.status}`) }
+        } catch (err) {
+          return { url, ok: false, msg: 'network error' }
+        }
+      })
+    )
+    setBulkResults(results)
+    setBulkRunning(false)
+    loadData()
+  }, [loadData])
 
   // Calculate page load statistics from page-load time (TTI)
   const pageLoads = rows
@@ -442,6 +480,23 @@ export default function Home() {
   return (
     <div className="page">
       <BrandBar />
+      <div className="bulk-bar">
+        <button className="bulk-btn" onClick={runBulkAudits} disabled={bulkRunning}>
+          {bulkRunning ? 'Running audits…' : 'Load (bulk audit myvi.in pages)'}
+        </button>
+        {bulkRunning && (
+          <span className="bulk-status">Triggering audits for {BULK_TARGETS.length} URLs…</span>
+        )}
+        {bulkResults && !bulkRunning && (
+          <span className="bulk-results">
+            {bulkResults.map((r) => (
+              <span key={r.url} className={r.ok ? 'bulk-ok' : 'bulk-err'} title={r.url}>
+                {r.ok ? '✓' : '✗'} {r.url.replace('https://moviesandtv.myvi.in', '') || '/'}
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
       {loading ? (
         <div style={{ color: '#98a2b3', textAlign: 'center', padding: 20, marginTop: 20 }}>Loading audits...</div>
       ) : (
