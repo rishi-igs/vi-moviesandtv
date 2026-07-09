@@ -20,6 +20,7 @@ export async function GET() {
           bestPracticesScore: true,
           seoScore: true,
           createdAt: true,
+          concurrentAudits: true,
           metrics: {
             take: 1,
             select: {

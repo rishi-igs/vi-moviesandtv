@@ -37,18 +37,24 @@ export async function POST(request: NextRequest) {
 
   // Fire-and-forget: this keeps running in the Node process after the
   // response is sent, regardless of whether the client stays connected.
+  // All items are kicked off together — actual concurrency is bounded by
+  // audit-pool.ts's AUDIT_POOL_SIZE, not by this loop, so items beyond the
+  // pool size just wait for a slot (still shown as "running" here; the pool
+  // doesn't distinguish "executing" from "waiting for a slot").
   ;(async () => {
-    for (let i = 0; i < batch.items.length; i++) {
-      updateBatchItem(batch.id, i, { status: 'running' })
-      const outcome = await runAuditForUrl(batch.items[i].url)
-      if (outcome.status === 'done') {
-        updateBatchItem(batch.id, i, { status: 'done', message: 'Audited' })
-      } else if (outcome.status === 'skipped') {
-        updateBatchItem(batch.id, i, { status: 'skipped', message: outcome.message })
-      } else {
-        updateBatchItem(batch.id, i, { status: 'error', message: outcome.error })
-      }
-    }
+    await Promise.all(
+      batch.items.map(async (item, i) => {
+        updateBatchItem(batch.id, i, { status: 'running' })
+        const outcome = await runAuditForUrl(item.url)
+        if (outcome.status === 'done') {
+          updateBatchItem(batch.id, i, { status: 'done', message: 'Audited' })
+        } else if (outcome.status === 'skipped') {
+          updateBatchItem(batch.id, i, { status: 'skipped', message: outcome.message })
+        } else {
+          updateBatchItem(batch.id, i, { status: 'error', message: outcome.error })
+        }
+      })
+    )
     markBatchComplete(batch.id)
   })()
 

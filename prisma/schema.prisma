@@ -26,6 +26,16 @@ model Audit {
   seoScore           Int?     @map("seo_score")
   error              String?
   createdAt          DateTime @default(now()) @map("created_at")
+  // Trimmed, real Lighthouse findings per metric (fcp/lcp/tbt/cls/si), used
+  // to power the hover-diagnosis tooltip. Not the full raw report — just
+  // title/description/score/displayValue for the audits relevant to each
+  // metric (see _lib/lighthouse-diagnostics.ts).
+  diagnostics        Json?
+  // How many audits (including this one) were running concurrently at the
+  // moment this one started. 1 = ran alone, clean numbers. 2+ = ran under
+  // CPU contention from sibling audits — TBT/Speed Index/performance score
+  // may read noisier than a solo run. Powers the "noisy result" badge.
+  concurrentAudits   Int?     @map("concurrent_audits")
 
   website Website @relation(fields: [websiteId], references: [id])
   metrics Metric[]

@@ -8,9 +8,12 @@
 // are shown; websites whose audit is still queued or failed are skipped.
 // ---------------------------------------------------------------------------
 
-function hostnameOf(url) {
+// hostname + path, so different pages on the same site (e.g. /originals vs
+// /search) are distinguishable in the History/Compare page pickers.
+function pageLabelOf(url) {
   try {
-    return new URL(url).hostname;
+    const u = new URL(url);
+    return u.pathname === "/" ? u.hostname : u.hostname + u.pathname;
   } catch (e) {
     return url;
   }
@@ -30,8 +33,9 @@ export async function loadDashboardRows() {
       if (!audit || !metric) return null;
 
       return {
+        auditId: audit.id,
         websiteId: site.id,
-        page: hostnameOf(site.url),
+        page: pageLabelOf(site.url),
         url: site.url,
         fcp: metric.fcp != null ? metric.fcp / 1000 : null,
         lcp: metric.lcp != null ? metric.lcp / 1000 : null,
@@ -46,7 +50,11 @@ export async function loadDashboardRows() {
         // time" field anywhere in the pipeline, so Speed Index is reused here
         // for visual consistency between the two dashboards.
         pageLoad: metric.speedIndex != null ? metric.speedIndex / 1000 : null,
-        auditedAt: audit.createdAt
+        auditedAt: audit.createdAt,
+        // 1 = ran alone. 2+ = ran under CPU contention from other concurrent
+        // audits — TBT/Speed Index/performance score may be noisier than a
+        // solo run. null = predates this tracking.
+        concurrentAudits: audit.concurrentAudits ?? null
       };
     })
     .filter(Boolean)
@@ -70,6 +78,55 @@ export async function loadCurrentBatch() {
   if (!res.ok) return null;
   const data = await res.json();
   return data.batch ?? null;
+}
+
+// Full audit history across every website (not just the latest per site) —
+// powers the History and Compare tabs.
+export async function loadAllAudits() {
+  const res = await fetch("/api/audits", { cache: "no-store" });
+  if (!res.ok) return [];
+  const audits = await res.json();
+
+  return audits
+    .map((a) => {
+      const metric = a.metrics?.[0];
+      if (!metric) return null;
+
+      return {
+        auditId: a.id,
+        websiteId: a.websiteId,
+        page: pageLabelOf(a.website.url),
+        url: a.website.url,
+        fcp: metric.fcp != null ? metric.fcp / 1000 : null,
+        lcp: metric.lcp != null ? metric.lcp / 1000 : null,
+        tbt: metric.tbt ?? null,
+        clsVal: metric.cls ?? null,
+        si: metric.speedIndex != null ? metric.speedIndex / 1000 : null,
+        accessibility: a.accessibilityScore,
+        bestPractices: a.bestPracticesScore,
+        seo: a.seoScore,
+        performance: a.performanceScore,
+        pageLoad: metric.speedIndex != null ? metric.speedIndex / 1000 : null,
+        auditedAt: a.createdAt,
+        concurrentAudits: a.concurrentAudits ?? null
+      };
+    })
+    .filter(Boolean);
+}
+
+// Real per-audit Lighthouse findings for the hover-diagnosis tooltip, fetched
+// lazily (only when a metric cell is actually hovered) and cached per audit
+// so repeated hovers don't re-fetch.
+const diagnosticsCache = new Map();
+
+export async function loadAuditDiagnostics(auditId) {
+  if (diagnosticsCache.has(auditId)) return diagnosticsCache.get(auditId);
+  const res = await fetch(`/api/audits/${auditId}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  const data = await res.json();
+  const diagnostics = data.diagnostics ?? null;
+  diagnosticsCache.set(auditId, diagnostics);
+  return diagnostics;
 }
 
 export async function startBulkAudit(urls) {

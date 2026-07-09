@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useLayoutEffect } from "react";
-import { loadDashboardRows, loadInFlightAudits, loadCurrentBatch, startBulkAudit } from "./data.js";
+import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
+import { loadDashboardRows, loadInFlightAudits, loadCurrentBatch, startBulkAudit, loadAllAudits, loadAuditDiagnostics } from "./data.js";
 
 // ---------------------------------------------------------------------------
 // Icons (inline SVG components, stroke-based, no external icon library)
@@ -99,7 +100,7 @@ function Hero({ rows, lastUpdated }) {
         <div className="hero-icon"><IconGauge /></div>
         <div>
           <h1>WEBSITE PERFORMANCE REPORT
-            <span className="live-badge"><span className="dot" />PROTOTYPE</span>
+            <span className="live-badge"><span className="dot" />LIVE</span>
           </h1>
           <div className="hero-sub">
             <span><IconGlobe /></span><span>Environment: Browsing History Audit</span>
@@ -182,7 +183,7 @@ function BulkAuditPanel() {
         <textarea
           value={text}
           onChange={e => setText(e.target.value)}
-          placeholder={"Paste myvi.in URLs, one per line\nhttps://moviesandtv.myvi.in/\nhttps://moviesandtv.myvi.in/originals"}
+          placeholder={"Paste URLs, one per line"}
           disabled={running || starting}
         />
         <div className="bulk-audit-actions">
@@ -207,9 +208,75 @@ function BulkAuditPanel() {
             ))}
           </div>
         )}
-        <p className="no-data-note">Only myvi.in URLs are audited — anything else is rejected automatically. Audits run one at a time (~1-2 min each) on the server, so progress here survives a refresh or a closed tab.</p>
+        {/* <p className="no-data-note">Only myvi.in URLs are audited — anything else is rejected automatically. Audits run one at a time (~1-2 min each) on the server, so progress here survives a refresh or a closed tab.</p> */}
       </div>
     </div>
+  );
+}
+
+function MetricTooltip({ anchorRect, loading, hasData, entries }) {
+  if (!anchorRect) return null;
+  const width = 320;
+  const style = {
+    top: anchorRect.bottom + 8,
+    left: Math.min(anchorRect.left, window.innerWidth - width - 12)
+  };
+  return createPortal(
+    <div className="metric-tooltip" style={style}>
+      {loading ? (
+        <div className="metric-tooltip-loading">Loading diagnosis…</div>
+      ) : !hasData ? (
+        <div className="metric-tooltip-loading">No diagnostic data for this audit — it ran before this feature was added.</div>
+      ) : entries.length === 0 ? (
+        <div className="metric-tooltip-loading metric-tooltip-ok">No issues found — this metric passed cleanly.</div>
+      ) : (
+        entries.map(e => (
+          <div className="metric-tooltip-item" key={e.id}>
+            <div className="metric-tooltip-title">
+              {e.title}
+              {e.displayValue ? <span className="metric-tooltip-value"> — {e.displayValue}</span> : null}
+            </div>
+            <div className="metric-tooltip-desc">{e.description}</div>
+          </div>
+        ))
+      )}
+    </div>,
+    document.body
+  );
+}
+
+// Wraps a metric <td> with hover-to-diagnose: on hover, lazily fetches the
+// real Lighthouse findings behind that specific audit's score for this
+// metric and shows them in a tooltip portaled to <body> (so it isn't clipped
+// by the table's horizontal scroll container).
+function MetricCell({ auditId, metricKey, className, children }) {
+  const cellRef = useRef(null);
+  const [hovered, setHovered] = useState(false);
+  const [rect, setRect] = useState(null);
+  const [diagnostics, setDiagnostics] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  function handleEnter() {
+    setHovered(true);
+    if (cellRef.current) setRect(cellRef.current.getBoundingClientRect());
+    if (diagnostics == null && !loading && auditId != null) {
+      setLoading(true);
+      loadAuditDiagnostics(auditId)
+        .then(setDiagnostics)
+        .finally(() => setLoading(false));
+    }
+  }
+
+  const hasData = diagnostics != null;
+  const entries = diagnostics?.[metricKey] ?? [];
+
+  return (
+    <td ref={cellRef} className={`${className} metric-cell`} onMouseEnter={handleEnter} onMouseLeave={() => setHovered(false)}>
+      {children}
+      {hovered && auditId != null && (
+        <MetricTooltip anchorRect={rect} loading={loading} hasData={hasData} entries={entries} />
+      )}
+    </td>
   );
 }
 
@@ -278,22 +345,34 @@ function ReportTable({ rows }) {
           {rows.length === 0 ? (
             <tr><td colSpan="12" style={{ textAlign: "center", padding: 24, color: "#98a2b3" }}>No successful audits available.</td></tr>
           ) : rows.map((r, i) => (
-            <tr key={r.websiteId}>
+            <tr key={r.auditId ?? r.websiteId}>
               <td className="col-idx"><span className="idx-badge">{i + 1}</span></td>
-              <td className="col-page"><div className="page-row"><IconDocument /><span>{r.page}</span></div></td>
+              <td className="col-page">
+                <div className="page-row">
+                  <IconDocument /><span>{r.page}</span>
+                  {r.concurrentAudits > 1 && (
+                    <span
+                      className="noisy-badge"
+                      title={`Ran alongside ${r.concurrentAudits - 1} other audit(s) at the same time — TBT, Speed Index, and performance score may be noisier than a solo run. Re-run this page alone for a trustworthy number.`}
+                    >
+                      ⚠
+                    </span>
+                  )}
+                </div>
+              </td>
               <td className="col-url">
                 <a href={r.url} target="_blank" rel="noopener noreferrer" title={r.url}>
                   <IconLink /><span>{r.url}</span>
                 </a>
               </td>
-              <td className={grade.fcp(r.fcp)}>{fmt(r.fcp, 1, " s")}</td>
-              <td className={grade.lcp(r.lcp)}>{fmt(r.lcp, 1, " s")}</td>
-              <td className={grade.tbt(r.tbt)}>{fmtMs(r.tbt)}</td>
-              <td className={grade.cls(r.clsVal)}>{r.clsVal == null ? "—" : r.clsVal.toFixed(3)}</td>
-              <td className={grade.si(r.si)}>{fmt(r.si, 1, " s")}</td>
-              <td className={grade.score(r.accessibility)}>{r.accessibility == null ? "—" : r.accessibility + "%"}</td>
-              <td className={grade.score(r.bestPractices)}>{r.bestPractices == null ? "—" : r.bestPractices + "%"}</td>
-              <td className={grade.score(r.seo)}>{r.seo == null ? "—" : r.seo + "%"}</td>
+              <MetricCell auditId={r.auditId} metricKey="fcp" className={grade.fcp(r.fcp)}>{fmt(r.fcp, 1, " s")}</MetricCell>
+              <MetricCell auditId={r.auditId} metricKey="lcp" className={grade.lcp(r.lcp)}>{fmt(r.lcp, 1, " s")}</MetricCell>
+              <MetricCell auditId={r.auditId} metricKey="tbt" className={grade.tbt(r.tbt)}>{fmtMs(r.tbt)}</MetricCell>
+              <MetricCell auditId={r.auditId} metricKey="cls" className={grade.cls(r.clsVal)}>{r.clsVal == null ? "—" : r.clsVal.toFixed(3)}</MetricCell>
+              <MetricCell auditId={r.auditId} metricKey="si" className={grade.si(r.si)}>{fmt(r.si, 1, " s")}</MetricCell>
+              <MetricCell auditId={r.auditId} metricKey="accessibility" className={grade.score(r.accessibility)}>{r.accessibility == null ? "—" : r.accessibility + "%"}</MetricCell>
+              <MetricCell auditId={r.auditId} metricKey="bestPractices" className={grade.score(r.bestPractices)}>{r.bestPractices == null ? "—" : r.bestPractices + "%"}</MetricCell>
+              <MetricCell auditId={r.auditId} metricKey="seo" className={grade.score(r.seo)}>{r.seo == null ? "—" : r.seo + "%"}</MetricCell>
               <td className="muted">{r.pageLoad == null ? "—" : fmt(r.pageLoad, 2, " s")}</td>
             </tr>
           ))}
@@ -305,6 +384,180 @@ function ReportTable({ rows }) {
         <div style={{ width: scrollWidth }} />
       </div>
     )}
+    </div>
+  );
+}
+
+function TabBar({ tab, setTab }) {
+  const tabs = [
+    { id: "report", label: "Report" },
+    { id: "history", label: "History" },
+    { id: "compare", label: "Compare" }
+  ];
+  return (
+    <nav className="tab-bar">
+      {tabs.map(t => (
+        <button
+          key={t.id}
+          className={`tab-btn ${tab === t.id ? "active" : ""}`}
+          onClick={() => setTab(t.id)}
+        >
+          {t.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function HistoryTab({ audits }) {
+  const pages = useMemo(() => {
+    const map = new Map();
+    audits.forEach(a => { if (!map.has(a.url)) map.set(a.url, a.page); });
+    return [...map.entries()].map(([url, page]) => ({ url, page }));
+  }, [audits]);
+
+  const [selectedUrl, setSelectedUrl] = useState("");
+  useEffect(() => {
+    if ((!selectedUrl || !pages.some(p => p.url === selectedUrl)) && pages.length) {
+      setSelectedUrl(pages[0].url);
+    }
+  }, [pages, selectedUrl]);
+
+  const rows = audits
+    .filter(a => a.url === selectedUrl)
+    .sort((a, b) => new Date(b.auditedAt) - new Date(a.auditedAt));
+
+  if (pages.length === 0) {
+    return <p className="no-data-note">No completed audits yet.</p>;
+  }
+
+  return (
+    <div>
+      <div className="tab-controls">
+        <label className="tab-controls-label">Page:</label>
+        <select className="tab-select" value={selectedUrl} onChange={e => setSelectedUrl(e.target.value)}>
+          {pages.map(p => <option key={p.url} value={p.url}>{p.page}</option>)}
+        </select>
+        <span className="bulk-audit-summary">{rows.length} audit{rows.length === 1 ? "" : "s"} recorded</span>
+      </div>
+      <ReportTable rows={rows} />
+    </div>
+  );
+}
+
+const compareMetrics = [
+  { key: "performance", label: "Performance Score", better: "higher", fmt: v => (v == null ? "—" : v + "%") },
+  { key: "accessibility", label: "Accessibility", better: "higher", fmt: v => (v == null ? "—" : v + "%") },
+  { key: "bestPractices", label: "Best Practices", better: "higher", fmt: v => (v == null ? "—" : v + "%") },
+  { key: "seo", label: "SEO", better: "higher", fmt: v => (v == null ? "—" : v + "%") },
+  { key: "fcp", label: "First Contentful Paint", better: "lower", fmt: v => fmt(v, 1, " s") },
+  { key: "lcp", label: "Largest Contentful Paint", better: "lower", fmt: v => fmt(v, 1, " s") },
+  { key: "tbt", label: "Total Blocking Time", better: "lower", fmt: v => fmtMs(v) },
+  { key: "clsVal", label: "Cumulative Layout Shift", better: "lower", fmt: v => (v == null ? "—" : v.toFixed(3)) },
+  { key: "si", label: "Speed Index", better: "lower", fmt: v => fmt(v, 1, " s") },
+  { key: "pageLoad", label: "Page Load Time", better: "lower", fmt: v => fmt(v, 2, " s") }
+];
+
+function CompareTab({ audits }) {
+  const options = useMemo(
+    () => [...audits].sort((a, b) => new Date(b.auditedAt) - new Date(a.auditedAt)),
+    [audits]
+  );
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  useEffect(() => {
+    if (selectedIds.length === 0 && options.length > 0) {
+      setSelectedIds(options.slice(0, 2).map(a => String(a.auditId)));
+    }
+  }, [options, selectedIds.length]);
+
+  if (options.length === 0) {
+    return <p className="no-data-note">No completed audits yet.</p>;
+  }
+  if (options.length < 2) {
+    return <p className="no-data-note">Need at least two completed audits to compare.</p>;
+  }
+
+  function optionLabel(a) {
+    return `${a.page} — ${new Date(a.auditedAt).toLocaleString()}`;
+  }
+
+  function updateSelected(index, value) {
+    setSelectedIds(prev => prev.map((id, i) => (i === index ? value : id)));
+  }
+
+  function addSelector() {
+    const used = new Set(selectedIds);
+    const next = options.find(a => !used.has(String(a.auditId)));
+    setSelectedIds(prev => [...prev, next ? String(next.auditId) : ""]);
+  }
+
+  function removeSelector(index) {
+    setSelectedIds(prev => prev.filter((_, i) => i !== index));
+  }
+
+  const columns = selectedIds
+    .map(id => options.find(a => String(a.auditId) === id))
+    .filter(Boolean);
+
+  return (
+    <div>
+      <div className="tab-controls compare-controls">
+        {selectedIds.map((id, i) => (
+          <div className="compare-selector" key={i}>
+            <select className="tab-select" value={id} onChange={e => updateSelected(i, e.target.value)}>
+              <option value="">Select an audit…</option>
+              {options.map(a => <option key={a.auditId} value={a.auditId}>{optionLabel(a)}</option>)}
+            </select>
+            {selectedIds.length > 2 && (
+              <button className="compare-remove-btn" onClick={() => removeSelector(i)} title="Remove">×</button>
+            )}
+          </div>
+        ))}
+        {selectedIds.length < options.length && (
+          <button className="compare-add-btn" onClick={addSelector}>+ Add audit</button>
+        )}
+      </div>
+      {columns.length < 2 ? (
+        <p className="no-data-note">Select at least two audits to compare.</p>
+      ) : (
+        <div className="panel compare-panel">
+          <div className="panel-body">
+            <div className="compare-table-scroll">
+              <table className="compare-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    {columns.map(col => (
+                      <th key={col.auditId}>{col.page}<span className="compare-date">{new Date(col.auditedAt).toLocaleString()}</span></th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {compareMetrics.map(m => {
+                    const values = columns.map(col => col[m.key]);
+                    const nonNull = values.filter(v => v != null);
+                    const best = nonNull.length > 1
+                      ? (m.better === "higher" ? Math.max(...nonNull) : Math.min(...nonNull))
+                      : null;
+                    const tied = new Set(values).size <= 1;
+                    return (
+                      <tr key={m.key}>
+                        <td className="compare-label">{m.label}</td>
+                        {values.map((v, i) => (
+                          <td key={i} className={best != null && v === best && !tied ? "compare-win" : undefined}>
+                            {m.fmt(v)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -418,9 +671,11 @@ function RatingPanel({ rows }) {
 
 export default function App() {
   const [rows, setRows] = useState([]);
+  const [allAudits, setAllAudits] = useState([]);
   const [inFlight, setInFlight] = useState([]);
   const [lastUpdated, setLastUpdated] = useState("—");
   const [error, setError] = useState(null);
+  const [tab, setTab] = useState("report");
 
   function load() {
     loadDashboardRows()
@@ -433,6 +688,8 @@ export default function App() {
     // Server-truth in-flight status — independent of any tab's local state,
     // so it still shows correctly after a refresh.
     loadInFlightAudits().then(setInFlight);
+    // Full history, used by the History and Compare tabs.
+    loadAllAudits().then(setAllAudits);
   }
 
   useEffect(() => {
@@ -448,20 +705,27 @@ export default function App() {
     <div className="page">
       <BrandBar />
       <Hero rows={rows} lastUpdated={lastUpdated} />
-      <InFlightPanel items={inFlight} />
-      <BulkAuditPanel />
-      {error ? (
-        <div style={{ color: "var(--bad)", textAlign: "center", padding: 20 }}>Failed to load data: {error}</div>
-      ) : (
+      <TabBar tab={tab} setTab={setTab} />
+      {tab === "report" && (
         <>
-          <ReportTable rows={rows} />
-          <section className="summary-grid">
-            <OverviewPanel rows={rows} />
-            <ScoreDistributionPanel rows={rows} />
-            <RatingPanel rows={rows} />
-          </section>
+          <InFlightPanel items={inFlight} />
+          <BulkAuditPanel />
+          {error ? (
+            <div style={{ color: "var(--bad)", textAlign: "center", padding: 20 }}>Failed to load data: {error}</div>
+          ) : (
+            <>
+              <ReportTable rows={rows} />
+              <section className="summary-grid">
+                <OverviewPanel rows={rows} />
+                <ScoreDistributionPanel rows={rows} />
+                <RatingPanel rows={rows} />
+              </section>
+            </>
+          )}
         </>
       )}
+      {tab === "history" && <HistoryTab audits={allAudits} />}
+      {tab === "compare" && <CompareTab audits={allAudits} />}
     </div>
   );
 }

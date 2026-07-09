@@ -1,8 +1,7 @@
 import { prisma } from '@/app/_lib/prisma'
-import { runLighthouseAudit as runLighthouseDefault } from '@/app/_lib/lighthouse-runner'
-import { runExclusive, tryStartAudit, finishAudit } from '@/app/_lib/audit-queue'
+import { runInPool } from '@/app/_lib/audit-pool'
+import { tryStartAudit, finishAudit } from '@/app/_lib/audit-queue'
 
-const USE_PLAYWRIGHT = process.env.USE_PLAYWRIGHT === '1'
 const COOLDOWN_MS = 5 * 60 * 1000
 
 // Server-side gate — the extension also restricts to this domain, but that's
@@ -12,11 +11,6 @@ const TARGET_HOST_SUFFIX = 'myvi.in'
 
 function isTargetHost(hostname: string): boolean {
   return hostname === TARGET_HOST_SUFFIX || hostname.endsWith(`.${TARGET_HOST_SUFFIX}`)
-}
-
-async function runLighthousePlaywright(url: string) {
-  const module = await import('@/app/_lib/playwright-runner')
-  return module.runLighthouseAudit(url)
 }
 
 export type AuditOutcome =
@@ -74,9 +68,7 @@ export async function runAuditForUrl(rawUrl: string): Promise<AuditOutcome> {
   }
 
   try {
-    const result = await runExclusive(() =>
-      USE_PLAYWRIGHT ? runLighthousePlaywright(normalizedUrl) : runLighthouseDefault(normalizedUrl)
-    )
+    const result = await runInPool(normalizedUrl)
 
     const audit = await prisma.audit.create({
       data: {
@@ -85,6 +77,8 @@ export async function runAuditForUrl(rawUrl: string): Promise<AuditOutcome> {
         accessibilityScore: result.accessibility,
         bestPracticesScore: result.bestPractices,
         seoScore: result.seo,
+        diagnostics: result.diagnostics,
+        concurrentAudits: result.concurrentAudits,
         metrics: {
           create: {
             fcp: result.fcp,

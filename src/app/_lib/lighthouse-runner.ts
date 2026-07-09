@@ -4,6 +4,7 @@ import path from 'path'
 import lighthouse from 'lighthouse'
 import * as chromeLauncher from 'chrome-launcher'
 import type { LighthouseResult } from '@/app/_types'
+import { extractDiagnostics } from '@/app/_lib/lighthouse-diagnostics'
 import http from 'http'
 import https from 'https'
 
@@ -119,6 +120,7 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
       cls: lhr.audits['cumulative-layout-shift']?.numericValue ?? null,
       tbt: lhr.audits['total-blocking-time']?.numericValue ?? null,
       speedIndex: lhr.audits['speed-index']?.numericValue ?? null,
+      diagnostics: extractDiagnostics(lhr),
     }
   } catch (error) {
     console.error('Lighthouse runner error:', error)

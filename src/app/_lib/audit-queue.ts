@@ -1,35 +1,19 @@
-// Serializes Lighthouse runs across the whole server process. Lighthouse relies on
-// global (per-process) performance.mark()/measure() calls internally, so two audits
-// running concurrently corrupt each other's timing marks and crash with:
-//   "The \"start lh:runner:gather\" performance mark has not been set"
-// Queuing them one at a time avoids that, and avoids concurrent runs skewing each
-// other's CPU-timing-based metrics (TBT, Speed Index, etc.).
+// Tracks which websites have an audit currently queued or running, across the
+// whole server process. Actual audit execution/concurrency is handled by
+// _lib/audit-pool.ts (each audit runs in its own child process, bounded by
+// AUDIT_POOL_SIZE); this module is only the per-website dedup guard.
 //
 // State lives on globalThis (same pattern as _lib/prisma.ts) because Next.js dev
 // mode hot-reloads this module on file changes, which would otherwise silently
-// reset the queue mid-flight and let two audits briefly run concurrently anyway.
+// reset it mid-flight and let duplicate audits for the same site slip through.
 type InFlightEntry = { url: string; startedAt: number }
 
 const globalForAuditQueue = globalThis as unknown as {
-  auditQueueTail?: Promise<unknown>
   auditInFlight?: Map<number, InFlightEntry>
 }
 
-if (!globalForAuditQueue.auditQueueTail) {
-  globalForAuditQueue.auditQueueTail = Promise.resolve()
-}
 if (!globalForAuditQueue.auditInFlight) {
   globalForAuditQueue.auditInFlight = new Map<number, InFlightEntry>()
-}
-
-export function runExclusive<T>(task: () => Promise<T>): Promise<T> {
-  const tail = globalForAuditQueue.auditQueueTail!
-  const result = tail.then(task, task)
-  globalForAuditQueue.auditQueueTail = result.then(
-    () => undefined,
-    () => undefined
-  )
-  return result
 }
 
 // Tracks websites with an audit currently queued or running. The cooldown check in

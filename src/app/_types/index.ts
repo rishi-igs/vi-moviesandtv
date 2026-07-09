@@ -9,7 +9,19 @@ export interface LighthouseResult {
   cls: number | null
   tbt: number | null
   speedIndex: number | null
+  diagnostics: MetricDiagnostics
 }
+
+export interface DiagnosticEntry {
+  id: string
+  title: string
+  description: string
+  score: number | null
+  displayValue?: string
+}
+
+// Keyed by metric: fcp | lcp | tbt | cls | si
+export type MetricDiagnostics = Record<string, DiagnosticEntry[]>
 
 export interface WebsiteWithAudits {
   id: number

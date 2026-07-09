@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import lighthouse from 'lighthouse'
 import type { LighthouseResult } from '@/app/_types'
+import { extractDiagnostics } from '@/app/_lib/lighthouse-diagnostics'
 import { chromium } from 'playwright'
 import net from 'net'
 
@@ -110,6 +111,7 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
       cls: lhr.audits['cumulative-layout-shift']?.numericValue ?? null,
       tbt: lhr.audits['total-blocking-time']?.numericValue ?? null,
       speedIndex: lhr.audits['speed-index']?.numericValue ?? null,
+      diagnostics: extractDiagnostics(lhr),
     }
   } finally {
     try {
