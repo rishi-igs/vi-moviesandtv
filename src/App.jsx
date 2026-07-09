@@ -217,9 +217,29 @@ function BulkAuditPanel() {
 function MetricTooltip({ anchorRect, loading, hasData, entries }) {
   if (!anchorRect) return null;
   const width = 320;
+  const maxHeight = 360;
+  const gap = 8;
+  const margin = 12;
+
+  const spaceBelow = window.innerHeight - anchorRect.bottom - gap - margin;
+  const spaceAbove = anchorRect.top - gap - margin;
+
+  // Flip above the cell when there isn't room below, and clamp the height to
+  // whichever side actually has room so the box (and its own scrollbar) never
+  // runs off the bottom or top of the viewport.
+  let top, height;
+  if (spaceBelow >= 160 || spaceBelow >= spaceAbove) {
+    height = Math.max(120, Math.min(maxHeight, spaceBelow));
+    top = anchorRect.bottom + gap;
+  } else {
+    height = Math.max(120, Math.min(maxHeight, spaceAbove));
+    top = anchorRect.top - gap - height;
+  }
+
   const style = {
-    top: anchorRect.bottom + 8,
-    left: Math.min(anchorRect.left, window.innerWidth - width - 12)
+    top,
+    left: Math.min(Math.max(anchorRect.left, margin), window.innerWidth - width - margin),
+    maxHeight: height
   };
   return createPortal(
     <div className="metric-tooltip" style={style}>
@@ -237,6 +257,11 @@ function MetricTooltip({ anchorRect, loading, hasData, entries }) {
               {e.displayValue ? <span className="metric-tooltip-value"> — {e.displayValue}</span> : null}
             </div>
             <div className="metric-tooltip-desc">{e.description}</div>
+            {e.learnMoreUrl && (
+              <a className="metric-tooltip-fix" href={e.learnMoreUrl} target="_blank" rel="noopener noreferrer">
+                How to fix this →
+              </a>
+            )}
           </div>
         ))
       )}

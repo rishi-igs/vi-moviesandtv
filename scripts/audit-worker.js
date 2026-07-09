@@ -1,9 +1,21 @@
-// Standalone worker: runs exactly one Lighthouse audit and prints the JSON
-// result to stdout, then exits. Spawned as its own Node process (see
-// src/app/_lib/audit-pool.ts) so multiple audits can run truly in parallel —
+// Worker: runs Lighthouse audits against a headless Chrome instance. Spawned
+// and kept alive by src/app/_lib/audit-pool.ts (via child_process.fork, one
+// per AUDIT_POOL_SIZE slot) so multiple audits can run in isolated processes —
 // Lighthouse relies on process-global performance.mark()/measure() calls, so
-// two audits in the SAME process corrupt each other's timing; giving each
-// concurrent audit its own process (not just its own Chrome tab) avoids that.
+// two audits in the SAME process corrupt each other's timing.
+//
+// Chrome is launched ONCE per worker and reused across every job it handles,
+// instead of cold-launching a fresh browser per audit (~2-5s saved each time).
+// Lighthouse already clears cache/cookies/storage as part of its own run
+// (visible in its logs as "Cleaning origin data" / "Cleaning browser cache"),
+// so reusing one browser across sequential audits doesn't leak state between
+// them.
+//
+// Two modes:
+//   - Persistent (default when forked with an IPC channel): launches Chrome
+//     once, then handles {id, url} job messages until told to shut down.
+//   - Standalone CLI (`node audit-worker.js <url>`): runs one audit and
+//     exits, useful for debugging outside the pool.
 //
 // Written as plain JS run directly by `node` (no TS/esbuild transform) on
 // purpose: running this through esbuild (e.g. via tsx) breaks Lighthouse's
@@ -48,6 +60,17 @@ const METRIC_AUDIT_IDS = {
 const CATEGORY_KEYS = { accessibility: 'accessibility', bestPractices: 'best-practices', seo: 'seo' }
 const MAX_CATEGORY_ISSUES = 8
 
+// Self-terminate if idle this long, so a warm Chrome instance doesn't sit
+// around forever consuming RAM if the pool goes unused for a while.
+const IDLE_SHUTDOWN_MS = 15 * 60 * 1000
+
+const LINK_PATTERN = /\[([^\]]+)\]\(([^)]+)\)/
+
+function extractLearnMoreUrl(text) {
+  const match = (text || '').match(LINK_PATTERN)
+  return match ? match[2] : undefined
+}
+
 function stripMarkdownLinks(text) {
   return (text || '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
 }
@@ -66,6 +89,7 @@ function extractCategoryIssues(lhr, categoryKey) {
       description: stripMarkdownLinks(audit.description),
       score: audit.score,
       displayValue: audit.displayValue || undefined,
+      learnMoreUrl: extractLearnMoreUrl(audit.description),
     })
   }
   entries.sort((a, b) => (a.score || 0) - (b.score || 0))
@@ -86,6 +110,7 @@ function extractDiagnostics(lhr) {
         description: stripMarkdownLinks(audit.description),
         score: typeof audit.score === 'number' ? audit.score : null,
         displayValue: audit.displayValue || undefined,
+        learnMoreUrl: extractLearnMoreUrl(audit.description),
       })
     }
     result[metric] = entries
@@ -96,8 +121,29 @@ function extractDiagnostics(lhr) {
   return result
 }
 
-function createUserDataDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'lighthouse-user-data-'))
+async function launchChrome() {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lighthouse-user-data-'))
+  const chrome = await chromeLauncher.launch({
+    userDataDir,
+    chromeFlags: [
+      '--headless=new',
+      '--no-sandbox',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--no-first-run',
+      '--disable-extensions',
+      '--disable-sync',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--no-default-browser-check',
+      '--ignore-certificate-errors',
+      '--allow-insecure-localhost',
+      '--noerrdialogs',
+      '--disable-features=IsolateOrigins,site-per-process',
+    ],
+  })
+  return { chrome, userDataDir }
 }
 
 async function killChromeInstance(chrome) {
@@ -145,8 +191,7 @@ function checkReachable(targetUrl) {
   })
 }
 
-async function runLighthouseAudit(url) {
-  const userDataDir = createUserDataDir()
+async function runAuditAgainst(chrome, url) {
   if (!/^https?:\/\//i.test(url)) url = 'http://' + url
 
   try {
@@ -155,88 +200,113 @@ async function runLighthouseAudit(url) {
     console.warn('Lighthouse pre-check: target URL unreachable:', err)
   }
 
-  const chrome = await chromeLauncher.launch({
-    userDataDir,
-    chromeFlags: [
-      '--headless=new',
-      '--no-sandbox',
-      '--disable-gpu',
-      '--disable-dev-shm-usage',
-      '--no-first-run',
-      '--disable-extensions',
-      '--disable-sync',
-      '--disable-background-networking',
-      '--disable-background-timer-throttling',
-      '--disable-renderer-backgrounding',
-      '--no-default-browser-check',
-      '--ignore-certificate-errors',
-      '--allow-insecure-localhost',
-      '--noerrdialogs',
-      '--disable-features=IsolateOrigins,site-per-process',
-    ],
-  })
-
-  try {
-    const result = await lighthouse(
-      url,
-      {
-        logLevel: 'info',
-        output: 'json',
-        port: chrome.port,
-        onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+  const result = await lighthouse(
+    url,
+    {
+      logLevel: 'info',
+      output: 'json',
+      port: chrome.port,
+      onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+    },
+    {
+      extends: 'lighthouse:default',
+      settings: {
+        formFactor: 'desktop',
+        screenEmulation: { mobile: false, width: 1350, height: 940, deviceScaleFactor: 1, disabled: false },
+        throttling: { rttMs: 40, throughputKbps: 10240, cpuSlowdownMultiplier: 1 },
       },
-      {
-        extends: 'lighthouse:default',
-        settings: {
-          formFactor: 'desktop',
-          screenEmulation: { mobile: false, width: 1350, height: 940, deviceScaleFactor: 1, disabled: false },
-          throttling: { rttMs: 40, throughputKbps: 10240, cpuSlowdownMultiplier: 1 },
-        },
-      }
-    )
-
-    if (!result || !result.lhr) throw new Error('Lighthouse returned no result')
-    const lhr = result.lhr
-
-    return {
-      url,
-      performance: Math.round(((lhr.categories.performance && lhr.categories.performance.score) || 0) * 100),
-      accessibility: Math.round(((lhr.categories.accessibility && lhr.categories.accessibility.score) || 0) * 100),
-      bestPractices: Math.round(((lhr.categories['best-practices'] && lhr.categories['best-practices'].score) || 0) * 100),
-      seo: Math.round(((lhr.categories.seo && lhr.categories.seo.score) || 0) * 100),
-      lcp: (lhr.audits['largest-contentful-paint'] && lhr.audits['largest-contentful-paint'].numericValue) ?? null,
-      fcp: (lhr.audits['first-contentful-paint'] && lhr.audits['first-contentful-paint'].numericValue) ?? null,
-      cls: (lhr.audits['cumulative-layout-shift'] && lhr.audits['cumulative-layout-shift'].numericValue) ?? null,
-      tbt: (lhr.audits['total-blocking-time'] && lhr.audits['total-blocking-time'].numericValue) ?? null,
-      speedIndex: (lhr.audits['speed-index'] && lhr.audits['speed-index'].numericValue) ?? null,
-      diagnostics: extractDiagnostics(lhr),
     }
-  } finally {
+  )
+
+  if (!result || !result.lhr) throw new Error('Lighthouse returned no result')
+  const lhr = result.lhr
+
+  return {
+    url,
+    performance: Math.round(((lhr.categories.performance && lhr.categories.performance.score) || 0) * 100),
+    accessibility: Math.round(((lhr.categories.accessibility && lhr.categories.accessibility.score) || 0) * 100),
+    bestPractices: Math.round(((lhr.categories['best-practices'] && lhr.categories['best-practices'].score) || 0) * 100),
+    seo: Math.round(((lhr.categories.seo && lhr.categories.seo.score) || 0) * 100),
+    lcp: (lhr.audits['largest-contentful-paint'] && lhr.audits['largest-contentful-paint'].numericValue) ?? null,
+    fcp: (lhr.audits['first-contentful-paint'] && lhr.audits['first-contentful-paint'].numericValue) ?? null,
+    cls: (lhr.audits['cumulative-layout-shift'] && lhr.audits['cumulative-layout-shift'].numericValue) ?? null,
+    tbt: (lhr.audits['total-blocking-time'] && lhr.audits['total-blocking-time'].numericValue) ?? null,
+    speedIndex: (lhr.audits['speed-index'] && lhr.audits['speed-index'].numericValue) ?? null,
+    diagnostics: extractDiagnostics(lhr),
+  }
+}
+
+async function runPersistentWorker() {
+  const { chrome, userDataDir } = await launchChrome()
+  let idleTimer = null
+
+  async function shutdown() {
+    if (idleTimer) clearTimeout(idleTimer)
     try {
       await killChromeInstance(chrome)
-    } catch (cleanupError) {
-      console.warn('Lighthouse cleanup error:', cleanupError)
+    } catch (err) {
+      console.warn('Lighthouse cleanup error:', err)
     }
     try {
       fs.rmSync(userDataDir, { recursive: true, force: true })
-    } catch (cleanupError) {
-      console.warn('Failed to remove Chrome user data dir:', cleanupError)
+    } catch (err) {
+      console.warn('Failed to remove Chrome user data dir:', err)
+    }
+    process.exit(0)
+  }
+
+  function resetIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(shutdown, IDLE_SHUTDOWN_MS)
+  }
+
+  process.on('disconnect', shutdown)
+  process.on('SIGTERM', shutdown)
+
+  process.on('message', async msg => {
+    if (!msg || !msg.id || !msg.url) return
+    if (idleTimer) clearTimeout(idleTimer)
+    try {
+      const result = await runAuditAgainst(chrome, msg.url)
+      process.send({ id: msg.id, ok: true, result })
+    } catch (err) {
+      process.send({ id: msg.id, ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+    resetIdleTimer()
+  })
+
+  resetIdleTimer()
+  process.send({ ready: true })
+}
+
+async function runOnce(url) {
+  const { chrome, userDataDir } = await launchChrome()
+  try {
+    const result = await runAuditAgainst(chrome, url)
+    process.stdout.write(JSON.stringify({ ok: true, result }))
+  } catch (err) {
+    process.stdout.write(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }))
+    process.exitCode = 1
+  } finally {
+    try {
+      await killChromeInstance(chrome)
+    } catch (err) {
+      console.warn('Lighthouse cleanup error:', err)
+    }
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true })
+    } catch (err) {
+      console.warn('Failed to remove Chrome user data dir:', err)
     }
   }
 }
 
-const url = process.argv[2]
-if (!url) {
-  process.stdout.write(JSON.stringify({ ok: false, error: 'Usage: audit-worker.js <url>' }))
+const cliUrl = process.argv[2]
+if (cliUrl) {
+  runOnce(cliUrl)
+} else if (process.send) {
+  runPersistentWorker()
+} else {
+  process.stdout.write(JSON.stringify({ ok: false, error: 'Usage: node audit-worker.js <url>, or fork() for persistent mode' }))
   process.exit(1)
 }
-
-runLighthouseAudit(url)
-  .then(result => {
-    process.stdout.write(JSON.stringify({ ok: true, result }))
-    process.exit(0)
-  })
-  .catch(err => {
-    process.stdout.write(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }))
-    process.exit(1)
-  })

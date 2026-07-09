@@ -41,8 +41,16 @@ const CATEGORY_KEYS: Record<string, string> = {
 }
 const MAX_CATEGORY_ISSUES = 8
 
-// Lighthouse audit descriptions use markdown links like "[Learn more](url)" —
-// strip to plain text since the tooltip isn't a markdown renderer.
+// Lighthouse audit descriptions end with a markdown link like
+// "Learn how to fix X." — pull the URL out separately (for a real, clickable
+// "how to fix this" link in the tooltip) and strip the markdown syntax from
+// the description itself, since the tooltip isn't a markdown renderer.
+const LINK_PATTERN = /\[([^\]]+)\]\(([^)]+)\)/
+
+function extractLearnMoreUrl(text: string): string | undefined {
+  return text.match(LINK_PATTERN)?.[2]
+}
+
 function stripMarkdownLinks(text: string): string {
   return text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
 }
@@ -65,6 +73,7 @@ function extractCategoryIssues(
       description: stripMarkdownLinks(audit.description ?? ''),
       score: audit.score,
       displayValue: audit.displayValue || undefined,
+      learnMoreUrl: extractLearnMoreUrl(audit.description ?? ''),
     })
   }
 
@@ -91,6 +100,7 @@ export function extractDiagnostics(lhr: {
         description: stripMarkdownLinks(audit.description ?? ''),
         score: typeof audit.score === 'number' ? audit.score : null,
         displayValue: audit.displayValue || undefined,
+        learnMoreUrl: extractLearnMoreUrl(audit.description ?? ''),
       })
     }
     result[metric] = entries

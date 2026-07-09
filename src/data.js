@@ -8,12 +8,14 @@
 // are shown; websites whose audit is still queued or failed are skipped.
 // ---------------------------------------------------------------------------
 
-// hostname + path, so different pages on the same site (e.g. /originals vs
-// /search) are distinguishable in the History/Compare page pickers.
+// Just the path (the URL column already shows the full hostname), so
+// different pages on the same site (e.g. /originals vs /search) are
+// distinguishable without repeating the domain on every row.
 function pageLabelOf(url) {
   try {
     const u = new URL(url);
-    return u.pathname === "/" ? u.hostname : u.hostname + u.pathname;
+    const path = u.pathname + u.search;
+    return path === "/" ? "Home" : path;
   } catch (e) {
     return url;
   }

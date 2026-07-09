@@ -18,6 +18,7 @@ export interface DiagnosticEntry {
   description: string
   score: number | null
   displayValue?: string
+  learnMoreUrl?: string
 }
 
 // Keyed by metric: fcp | lcp | tbt | cls | si
