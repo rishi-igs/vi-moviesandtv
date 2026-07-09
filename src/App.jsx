@@ -21,6 +21,7 @@ const IconWheelchair = () => <svg viewBox="0 0 24 24" fill="none" stroke="curren
 const IconAward = () => <svg {...svgProps}><circle cx="12" cy="8" r="6" /><path d="M15.48 13.4 17 22l-5-3-5 3 1.52-8.6" /></svg>;
 const IconSearch = () => <svg {...svgProps}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>;
 const IconBarChart = () => <svg {...svgProps}><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /></svg>;
+const IconSparkles = () => <svg {...svgProps}><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3Z" /><path d="m19 15 0.7 2.3L22 18l-2.3 0.7L19 21l-0.7-2.3L16 18l2.3-0.7L19 15Z" /><path d="m5 15 0.7 2.3L8 18l-2.3 0.7L5 21l-0.7-2.3L2 18l2.3-0.7L5 15Z" /></svg>;
 
 // ---------------------------------------------------------------------------
 // Threshold -> CSS class helpers (Lighthouse standard breakpoints)
@@ -694,6 +695,102 @@ function RatingPanel({ rows }) {
   );
 }
 
+// Adapts our flat row shape (fcp in seconds, etc.) to the shape the AI
+// assistant's fallback data-answer logic expects (audit/metric sub-objects,
+// timings in ms) — see src/app/api/ai-assistant/route.ts.
+function toAiRow(r) {
+  return {
+    url: r.url,
+    audit: {
+      performanceScore: r.performance,
+      accessibilityScore: r.accessibility,
+      bestPracticesScore: r.bestPractices,
+      seoScore: r.seo
+    },
+    metric: {
+      fcp: r.fcp != null ? r.fcp * 1000 : null,
+      lcp: r.lcp != null ? r.lcp * 1000 : null,
+      tbt: r.tbt,
+      cls: r.clsVal,
+      speedIndex: r.si != null ? r.si * 1000 : null,
+      tti: r.pageLoad != null ? r.pageLoad * 1000 : null
+    },
+    categories: []
+  };
+}
+
+function AIAssistantPanel({ rows }) {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState([
+    { role: "assistant", content: "Ask me anything about the current audit data and I will answer using only the records shown here." }
+  ]);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const trimmed = question.trim();
+    if (!trimmed) return;
+
+    setMessages(current => [...current, { role: "user", content: trimmed }]);
+    setLoading(true);
+    setQuestion("");
+
+    try {
+      const response = await fetch("/api/ai-assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: trimmed, rows: rows.map(toAiRow) })
+      });
+      const data = await response.json();
+      setMessages(current => [...current, { role: "assistant", content: data.answer || "I could not generate an answer from the available data." }]);
+    } catch {
+      setMessages(current => [...current, { role: "assistant", content: "I could not reach the assistant service right now. Please try again." }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="ai-assistant-float">
+      <button className="ai-assistant-toggle" onClick={() => setOpen(v => !v)} type="button">
+        <IconSparkles />
+        <span>AI Assistant</span>
+      </button>
+
+      {open && (
+        <div className="ai-assistant-panel">
+          <div className="ai-assistant-header">
+            <div>
+              <h3>Data-based assistant</h3>
+              <p>Answers from the current dashboard records only.</p>
+            </div>
+            <button type="button" className="ai-assistant-close" onClick={() => setOpen(false)}>×</button>
+          </div>
+
+          <div className="ai-assistant-messages">
+            {messages.map((message, index) => (
+              <div key={`${message.role}-${index}`} className={`ai-assistant-bubble ${message.role}`}>
+                {message.content}
+              </div>
+            ))}
+            {loading && <div className="ai-assistant-bubble assistant">Thinking…</div>}
+          </div>
+
+          <form className="ai-assistant-form" onSubmit={handleSubmit}>
+            <input
+              value={question}
+              onChange={event => setQuestion(event.target.value)}
+              placeholder="Ask about the latest scores, best URLs, or comparisons"
+            />
+            <button type="submit" disabled={loading}>Send</button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [rows, setRows] = useState([]);
   const [allAudits, setAllAudits] = useState([]);
@@ -751,6 +848,7 @@ export default function App() {
       )}
       {tab === "history" && <HistoryTab audits={allAudits} />}
       {tab === "compare" && <CompareTab audits={allAudits} />}
+      <AIAssistantPanel rows={rows} />
     </div>
   );
 }
