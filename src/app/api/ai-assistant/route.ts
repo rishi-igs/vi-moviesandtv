@@ -2,8 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 
-const API_KEY = process.env.AI_API_KEY
-const MODEL = 'gpt-4o-mini'
+const API_KEY = process.env.GEMINI_API_KEY
+const MODEL = 'gemini-2.0-flash'
 
 function summarizeRows(rows: any[]) {
   if (!rows?.length) return 'No audit rows available.'
@@ -145,6 +145,33 @@ function buildComparisonAnswer(question: string, rows: any[]) {
   return `Here are the top ${topRows.length} URLs for ${metricLabel}: ${details}`
 }
 
+function getPageSlug(url: string) {
+  try {
+    const path = new URL(url).pathname.replace(/\/+$/, '')
+    const segment = path.split('/').filter(Boolean).pop()
+    return (segment || 'home').replace(/-/g, ' ').toLowerCase()
+  } catch {
+    return url.toLowerCase()
+  }
+}
+
+// Lets questions like "metrics of originals" or "how is sports doing" scope
+// down to the matching page(s) by URL slug, instead of silently falling back
+// to whichever row happens to be first in the list.
+function filterRowsByPageName(question: string, rows: any[]) {
+  const normalized = question.toLowerCase()
+  const skipWords = ['tvshow', 'the', 'and', 'for']
+
+  return rows.filter((row) => {
+    const words = getPageSlug(row.url)
+      .split(' ')
+      .filter((word) => word.length > 2 && !skipWords.includes(word))
+    if (!words.length) return false
+    const hits = words.filter((word) => normalized.includes(word)).length
+    return hits >= Math.max(1, Math.ceil(words.length / 2))
+  })
+}
+
 function generateDataAnswer(question: string, rows: any[]) {
   const normalized = question.toLowerCase()
   const rowsWithData = rows.filter((row) => row?.url)
@@ -153,24 +180,27 @@ function generateDataAnswer(question: string, rows: any[]) {
     return 'No audit data is currently available to answer that question.'
   }
 
+  const scopedRows = filterRowsByPageName(question, rowsWithData)
+  const activeRows = scopedRows.length ? scopedRows : rowsWithData
+
   if (normalized.includes('compare') || normalized.includes('comparison')) {
-    return buildComparisonAnswer(question, rowsWithData)
+    return buildComparisonAnswer(question, activeRows)
   }
 
   if (normalized.includes('average') || normalized.includes('avg')) {
     const metricKey = getMetricKey(question)
-    const values = rowsWithData
+    const values = activeRows
       .map((row) => getMetricValue(row, metricKey))
       .filter((value): value is number => value != null)
 
     if (!values.length) return `I do not have enough ${metricKey} values to calculate an average.`
     const average = values.reduce((sum, value) => sum + value, 0) / values.length
-    return `The average ${metricKey} across ${rowsWithData.length} URLs is ${formatMetricValue(metricKey, average)}.`
+    return `The average ${metricKey} across ${activeRows.length} URLs is ${formatMetricValue(metricKey, average)}.`
   }
 
   if (normalized.includes('best') || normalized.includes('highest') || normalized.includes('top')) {
     const metricKey = getMetricKey(question)
-    const ranked = rowsWithData
+    const ranked = activeRows
       .map((row) => ({ row, value: getMetricValue(row, metricKey) }))
       .filter((entry) => entry.value != null)
       .sort((a, b) => {
@@ -187,7 +217,7 @@ function generateDataAnswer(question: string, rows: any[]) {
 
   if (normalized.includes('worst') || normalized.includes('lowest') || normalized.includes('slowest')) {
     const metricKey = getMetricKey(question)
-    const ranked = rowsWithData
+    const ranked = activeRows
       .map((row) => ({ row, value: getMetricValue(row, metricKey) }))
       .filter((entry) => entry.value != null)
       .sort((a, b) => {
@@ -202,7 +232,17 @@ function generateDataAnswer(question: string, rows: any[]) {
     return `${worst.row.url} has the weakest ${metricKey} result at ${formatMetricValue(metricKey, worst.value)}.`
   }
 
-  const firstRow = rowsWithData[0]
+  if (scopedRows.length) {
+    const details = scopedRows
+      .map((row) => {
+        const audit = row.audit || {}
+        return `${row.url} — performance ${audit.performanceScore ?? '—'}, accessibility ${audit.accessibilityScore ?? '—'}, best practices ${audit.bestPracticesScore ?? '—'}, seo ${audit.seoScore ?? '—'}, fcp ${formatMetricValue('fcp', getMetricValue(row, 'fcp'))}, lcp ${formatMetricValue('lcp', getMetricValue(row, 'lcp'))}, tbt ${formatMetricValue('tbt', getMetricValue(row, 'tbt'))}, cls ${formatMetricValue('cls', getMetricValue(row, 'cls'))}, speed index ${formatMetricValue('speed index', getMetricValue(row, 'speed index'))}, page load ${formatMetricValue('page load', getMetricValue(row, 'page load'))}`
+      })
+      .join(' | ')
+    return `Here are the current metrics: ${details}`
+  }
+
+  const firstRow = activeRows[0]
   return `I can answer based on the current dashboard data. For example, ${firstRow.url} currently shows performance ${firstRow.audit?.performanceScore ?? '—'}, accessibility ${firstRow.audit?.accessibilityScore ?? '—'}, and page load ${formatMetricValue('page load', firstRow.metric?.tti ?? null)}.`
 }
 
@@ -215,26 +255,25 @@ export async function POST(request: Request) {
     const prompt = `You are a Lighthouse analysis assistant. Explain the issue breakdowns in plain English, prioritize the most impactful fixes, and reference the category details from the provided audit data. Do not use outside knowledge.\n\nUser question: ${question}\n\nAudit data:\n${summarizeRows(rows || [])}\n\nRespond concisely and clearly, citing the most relevant issues and suggested fixes.`
 
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            { role: 'system', content: 'You answer using only the provided audit data.' },
-            { role: 'user', content: prompt },
-          ],
-          temperature: 0.2,
-        }),
-      })
+      if (!API_KEY) throw new Error('no key')
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: 'You answer using only the provided audit data.' }] },
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2 },
+          }),
+        }
+      )
 
       const data = await response.json()
 
       if (response.ok) {
-        const answer = data.choices?.[0]?.message?.content?.trim()
+        const answer = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
         if (answer) return NextResponse.json({ answer })
       }
     } catch {
