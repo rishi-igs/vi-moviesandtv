@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,6 +43,7 @@ const IconActivity = () => <svg {...svgProps}><path d="M22 12h-4l-3 9L9 3l-3 9H2
 const IconBarChart = () => <svg {...svgProps}><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /></svg>
 const IconGlobe = () => <svg {...svgProps}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
 const IconClock = () => <svg {...svgProps}><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+const IconSparkles = () => <svg {...svgProps}><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3Z" /><path d="m19 15 0.7 2.3L22 18l-2.3 0.7L19 21l-0.7-2.3L16 18l2.3-0.7L19 15Z" /><path d="m5 15 0.7 2.3L8 18l-2.3 0.7L5 21l-0.7-2.3L2 18l2.3-0.7L5 15Z" /></svg>
 
 // ---------------------------------------------------------------------------
 // Grade helpers
@@ -70,6 +71,61 @@ const msToSec = (v: number | null | undefined) => v == null || isNaN(v) ? null :
 // Page-load-time (TTI) rating buckets, in milliseconds
 const PLT_FAST_MS = 1000   // < 1s
 const PLT_SLOW_MS = 2000   // > 2s
+
+function getCategoryLabel(category: string) {
+  switch (category) {
+    case 'performance': return 'Performance'
+    case 'accessibility': return 'Accessibility'
+    case 'best-practices': return 'Best Practices'
+    case 'seo': return 'SEO'
+    default: return category
+  }
+}
+
+function getCategoryScore(row: any, category: string) {
+  if (!row?.audit) return null
+  switch (category) {
+    case 'performance': return row.audit.performanceScore ?? null
+    case 'accessibility': return row.audit.accessibilityScore ?? null
+    case 'best-practices': return row.audit.bestPracticesScore ?? null
+    case 'seo': return row.audit.seoScore ?? null
+    default: return null
+  }
+}
+
+function getCategoryDetails(row: any, category: string) {
+  return (row?.categories || []).find((item: any) => item.category === category) || null
+}
+
+function resolveIssues(source: any): any[] {
+  if (!source) return []
+  if (Array.isArray(source)) return source
+  if (typeof source === 'string') {
+    try {
+      return resolveIssues(JSON.parse(source))
+    } catch {
+      return []
+    }
+  }
+  if (typeof source !== 'object') return []
+
+  const lookupKeys = ['issues', 'details', 'items', 'violations', 'entries', 'nodes', 'findings']
+  for (const key of lookupKeys) {
+    const value = source[key]
+    if (Array.isArray(value) && value.length > 0) return value
+  }
+
+  for (const value of Object.values(source)) {
+    const nested = resolveIssues(value)
+    if (nested.length > 0) return nested
+  }
+
+  return []
+}
+
+function getPointsLost(score: number | null) {
+  return score == null ? 100 : Math.max(0, 100 - score)
+}
 
 // URLs audited by the bulk "Load" button for quick end-to-end testing.
 const BULK_TARGETS = [
@@ -190,14 +246,56 @@ function Hero({ rows, lastUpdated, bestPageLoad, worstPageLoad, avgPageLoad }: {
   )
 }
 
-function ReportTable({ rows }: { rows: any[] }) {
+function HistoryMetricItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="history-item-metric">
+      <span className="history-item-label">{label}</span>
+      <span className="history-item-value">{value}</span>
+    </div>
+  )
+}
+
+function HistoryPanel({ url, history }: { url: string; history: any[] }) {
+  return (
+    <div className="history-panel">
+      <div className="history-heading">Previous audits for {url}</div>
+      {history?.length ? (
+        <div className="history-list">
+          {history.map((audit: any) => (
+            <div key={audit.id} className="history-item">
+              <div className="history-item-top">
+                <span>{new Date(audit.createdAt).toLocaleString()}</span>
+                <span className={grade.score(audit.performanceScore ?? null)}>{audit.performanceScore == null ? '—' : `${audit.performanceScore}%`}</span>
+              </div>
+              <div className="history-item-grid">
+                <HistoryMetricItem label="FCP" value={fmt(msToSec(audit.metric?.fcp), 1, ' s')} />
+                <HistoryMetricItem label="LCP" value={fmt(msToSec(audit.metric?.lcp), 1, ' s')} />
+                <HistoryMetricItem label="TBT" value={fmtMs(audit.metric?.tbt ?? null)} />
+                <HistoryMetricItem label="CLS" value={fmtCls(audit.metric?.cls ?? null)} />
+                <HistoryMetricItem label="Speed Index" value={fmt(msToSec(audit.metric?.speedIndex), 1, ' s')} />
+                <HistoryMetricItem label="Accessibility" value={audit.accessibilityScore == null ? '—' : `${audit.accessibilityScore}%`} />
+                <HistoryMetricItem label="Best Practices" value={audit.bestPracticesScore == null ? '—' : `${audit.bestPracticesScore}%`} />
+                <HistoryMetricItem label="SEO" value={audit.seoScore == null ? '—' : `${audit.seoScore}%`} />
+                <HistoryMetricItem label="Page Load" value={fmt(msToSec(audit.metric?.tti), 2, ' s')} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="history-empty">No previous audits yet.</div>
+      )}
+    </div>
+  )
+}
+
+function ReportTable({ rows, showHistory, onPreviewInsight, onOpenInsight }: { rows: any[]; showHistory: boolean; onPreviewInsight: (row: any, category: string) => void; onOpenInsight: (row: any, category: string) => void }) {
   return (
     <section className="table-wrap">
       <table>
         <thead>
           <tr className="group-row">
             <th></th><th></th><th></th>
-            <th colSpan={5}>Performance</th>
+            <th colSpan={6}>Performance</th>
             <th></th><th></th><th></th><th></th>
           </tr>
           <tr className="col-row">
@@ -209,6 +307,7 @@ function ReportTable({ rows }: { rows: any[] }) {
             <th><div className="th-inner"><IconHand /><span>Total Blocking Time (ms)</span></div></th>
             <th><div className="th-inner"><IconLayers /><span>Cumulative Layout Shift</span></div></th>
             <th><div className="th-inner"><IconActivity /><span>Speed Index (s)</span></div></th>
+            <th><div className="th-inner"><IconBarChart /><span>Performance Score</span></div></th>
             <th><div className="th-inner"><IconBarChart /><span>Accessibility</span></div></th>
             <th><div className="th-inner"><IconBarChart /><span>Best Practices</span></div></th>
             <th><div className="th-inner"><IconBarChart /><span>SEO</span></div></th>
@@ -219,34 +318,84 @@ function ReportTable({ rows }: { rows: any[] }) {
           {rows.length === 0 ? (
             <tr><td colSpan={12} style={{ textAlign: 'center', padding: 24, color: '#98a2b3' }}>No successful audits available.</td></tr>
           ) : rows.map((r, i) => (
-            <tr key={r.id}>
-              <td className="col-idx"><span className="idx-badge">{i + 1}</span></td>
-              <td className="col-page"><div className="page-row"><IconDocument /><span>{r.pageName}</span></div></td>
-              <td className="col-url">
-                <a href={r.url} target="_blank" rel="noopener noreferrer" title={r.url}>
-                  <IconLink /><span>{r.url}</span>
-                </a>
-              </td>
-              {r.status === 'pending' ? (
-                <td colSpan={9} className="muted" style={{ textAlign: 'center' }}>Auditing…</td>
-              ) : r.status === 'failed' ? (
-                <td colSpan={9} className="bad" style={{ textAlign: 'center' }} title={r.audit?.error || 'Audit failed'}>
-                  Failed{r.audit?.error ? `: ${r.audit.error}` : ''}
+            <Fragment key={r.id}>
+              <tr>
+                <td className="col-idx"><span className="idx-badge">{i + 1}</span></td>
+                <td className="col-page"><div className="page-row"><IconDocument /><span>{r.pageName}</span></div></td>
+                <td className="col-url">
+                  <a href={r.url} target="_blank" rel="noopener noreferrer" title={r.url}>
+                    <IconLink /><span>{r.url}</span>
+                  </a>
                 </td>
-              ) : (
-                <>
-                  <td className={grade.fcp(msToSec(r.metric?.fcp))}>{fmt(msToSec(r.metric?.fcp), 1, ' s')}</td>
-                  <td className={grade.lcp(msToSec(r.metric?.lcp))}>{fmt(msToSec(r.metric?.lcp), 1, ' s')}</td>
-                  <td className={grade.tbt(r.metric?.tbt ?? null)}>{fmtMs(r.metric?.tbt ?? null)}</td>
-                  <td className={grade.cls(r.metric?.cls ?? null)}>{fmtCls(r.metric?.cls ?? null)}</td>
-                  <td className={grade.si(msToSec(r.metric?.speedIndex))}>{fmt(msToSec(r.metric?.speedIndex), 1, ' s')}</td>
-                  <td className={grade.score(r.audit?.accessibilityScore ?? null)}>{r.audit?.accessibilityScore == null ? '—' : r.audit.accessibilityScore + '%'}</td>
-                  <td className={grade.score(r.audit?.bestPracticesScore ?? null)}>{r.audit?.bestPracticesScore == null ? '—' : r.audit.bestPracticesScore + '%'}</td>
-                  <td className={grade.score(r.audit?.seoScore ?? null)}>{r.audit?.seoScore == null ? '—' : r.audit.seoScore + '%'}</td>
-                  <td className={r.metric?.tti == null ? 'muted' : ''}>{fmt(msToSec(r.metric?.tti), 2, ' s')}</td>
-                </>
+                {r.status === 'pending' ? (
+                  <td colSpan={13} className="muted" style={{ textAlign: 'center' }}>Auditing…</td>
+                ) : r.status === 'failed' ? (
+                  <td colSpan={13} className="bad" style={{ textAlign: 'center' }} title={r.audit?.error || 'Audit failed'}>
+                    Failed{r.audit?.error ? `: ${r.audit.error}` : ''}
+                  </td>
+                ) : (
+                  <>
+                    <td className={grade.fcp(msToSec(r.metric?.fcp))}>{fmt(msToSec(r.metric?.fcp), 1, ' s')}</td>
+                    <td className={grade.lcp(msToSec(r.metric?.lcp))}>{fmt(msToSec(r.metric?.lcp), 1, ' s')}</td>
+                    <td className={grade.tbt(r.metric?.tbt ?? null)}>{fmtMs(r.metric?.tbt ?? null)}</td>
+                    <td className={grade.cls(r.metric?.cls ?? null)}>{fmtCls(r.metric?.cls ?? null)}</td>
+                    <td className={grade.si(msToSec(r.metric?.speedIndex))}>{fmt(msToSec(r.metric?.speedIndex), 1, ' s')}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`score-pill ${grade.score(r.audit?.performanceScore ?? null)}`}
+                        onMouseEnter={() => onPreviewInsight(r, 'performance')}
+                        onMouseLeave={() => onPreviewInsight(r, '')}
+                        onClick={() => onOpenInsight(r, 'performance')}
+                      >
+                        {r.audit?.performanceScore == null ? '—' : `${r.audit.performanceScore}%`}
+                      </button>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`score-pill ${grade.score(r.audit?.accessibilityScore ?? null)}`}
+                        onMouseEnter={() => onPreviewInsight(r, 'accessibility')}
+                        onMouseLeave={() => onPreviewInsight(r, '')}
+                        onClick={() => onOpenInsight(r, 'accessibility')}
+                      >
+                        {r.audit?.accessibilityScore == null ? '—' : `${r.audit.accessibilityScore}%`}
+                      </button>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`score-pill ${grade.score(r.audit?.bestPracticesScore ?? null)}`}
+                        onMouseEnter={() => onPreviewInsight(r, 'best-practices')}
+                        onMouseLeave={() => onPreviewInsight(r, '')}
+                        onClick={() => onOpenInsight(r, 'best-practices')}
+                      >
+                        {r.audit?.bestPracticesScore == null ? '—' : `${r.audit.bestPracticesScore}%`}
+                      </button>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`score-pill ${grade.score(r.audit?.seoScore ?? null)}`}
+                        onMouseEnter={() => onPreviewInsight(r, 'seo')}
+                        onMouseLeave={() => onPreviewInsight(r, '')}
+                        onClick={() => onOpenInsight(r, 'seo')}
+                      >
+                        {r.audit?.seoScore == null ? '—' : `${r.audit.seoScore}%`}
+                      </button>
+                    </td>
+                    <td className={r.metric?.tti == null ? 'muted' : ''}>{fmt(msToSec(r.metric?.tti), 2, ' s')}</td>
+                  </>
+                )}
+              </tr>
+              {showHistory && (
+                <tr key={`${r.id}-history`}>
+                  <td colSpan={12} className="history-cell">
+                    <HistoryPanel url={r.url} history={r.history || []} />
+                  </td>
+                </tr>
               )}
-            </tr>
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -383,12 +532,196 @@ function PerformanceRating({ rows }: { rows: any[] }) {
   )
 }
 
+function InsightPreview({ insight }: { insight: any }) {
+  if (!insight) return null
+
+  return (
+    <div className="insight-preview-card">
+      <div className="insight-preview-header">
+        <div>
+          <div className="insight-preview-label">{insight.label}</div>
+          <div className="insight-preview-url">{insight.url}</div>
+        </div>
+        <div className={`insight-score-pill ${grade.score(insight.score ?? null)}`}>{insight.score == null ? '—' : `${insight.score}%`}</div>
+      </div>
+      <div className="insight-preview-meta">
+        <span>Points lost: {getPointsLost(insight.score)}%</span>
+        <span>{insight.issues.length} issues</span>
+      </div>
+      <div className="insight-preview-list">
+        {(insight.issues || []).slice(0, 4).map((issue: any) => (
+          <div key={issue.id} className="insight-preview-item">
+            <strong>{issue.title}</strong>
+            <span>{issue.severity || 'needs attention'}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function InsightDrawer({ insight, issue, onSelectIssue, onClose }: { insight: any; issue: any; onSelectIssue: (issueId: string) => void; onClose: () => void }) {
+  if (!insight) return null
+
+  const issues = resolveIssues(insight.issues?.length ? insight.issues : insight.raw || insight)
+  const activeIssue = issue || issues[0] || null
+
+  return (
+    <div className="insight-drawer-backdrop" onClick={onClose}>
+      <aside className="insight-drawer" onClick={(event) => event.stopPropagation()}>
+        <div className="insight-drawer-header">
+          <div>
+            <div className="insight-drawer-label">{insight.label}</div>
+            <h3>{insight.url}</h3>
+          </div>
+          <button type="button" className="insight-drawer-close" onClick={onClose}>×</button>
+        </div>
+
+        <div className="insight-drawer-summary">
+          <div className={`insight-score-pill ${grade.score(insight.score ?? null)}`}>{insight.score == null ? '—' : `${insight.score}%`}</div>
+          <div>
+            <div className="insight-drawer-kicker">Points lost</div>
+            <div className="insight-drawer-value">{getPointsLost(insight.score)}%</div>
+          </div>
+          <div>
+            <div className="insight-drawer-kicker">Issues</div>
+            <div className="insight-drawer-value">{issues.length}</div>
+          </div>
+        </div>
+
+        <div className="insight-drawer-body">
+          <div className="insight-issue-list">
+            {issues.length > 0 ? issues.map((item: any, index: number) => (
+              <button
+                key={item.id ?? item.ruleId ?? index}
+                type="button"
+                className={`insight-issue-item ${activeIssue?.id === item.id ? 'is-active' : ''}`}
+                onClick={() => onSelectIssue(item.id ?? item.ruleId ?? String(index))}
+              >
+                <span>{item.title || item.ruleId || item.id || `Issue ${index + 1}`}</span>
+                <small>{item.severity || item.impact || item.type || 'needs attention'}</small>
+              </button>
+            )) : (
+              <div className="insight-empty">
+                No audit issues were found for this category.
+              </div>
+            )}
+          </div>
+
+          {activeIssue ? (
+            <div className="insight-issue-detail">
+              <h4>{activeIssue.title || activeIssue.ruleId || activeIssue.id || 'Issue details'}</h4>
+              <p>{activeIssue.description || activeIssue.explanation || activeIssue.message || 'Lighthouse flagged this issue and it is contributing to the overall category score.'}</p>
+              <div className="insight-detail-grid">
+                <div><label>Why it matters</label><div>{activeIssue.explanation || activeIssue.description || 'This issue reduces confidence in the experience and can harm usability, accessibility, or SEO.'}</div></div>
+                <div><label>Estimated impact</label><div>{activeIssue.estimatedImpact || activeIssue.impact || 'Medium'}</div></div>
+                <div><label>Selector</label><div>{activeIssue.selector || activeIssue.node || activeIssue.target || 'No specific selector available'}</div></div>
+                <div><label>Display value</label><div>{activeIssue.displayValue || activeIssue.value || '—'}</div></div>
+              </div>
+              <div className="insight-detail-block">
+                <label>Suggested fix</label>
+                <div>{activeIssue.recommendation || activeIssue.fix || 'Review the failing element and update the implementation to satisfy the Lighthouse audit guidance.'}</div>
+              </div>
+              <div className="insight-detail-block">
+                <label>HTML snippet</label>
+                <pre>{activeIssue.htmlSnippet || activeIssue.snippet || activeIssue.node || '<!-- No snippet available -->'}</pre>
+              </div>
+              {activeIssue.documentationUrl ? (
+                <a className="insight-doc-link" href={activeIssue.documentationUrl} target="_blank" rel="noreferrer">Open Lighthouse documentation</a>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </aside>
+    </div>
+  )
+}
+
+function AIAssistantPanel({ rows }: { rows: any[] }) {
+  const [open, setOpen] = useState(false)
+  const [question, setQuestion] = useState('')
+  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
+    { role: 'assistant', content: 'Ask me anything about the current audit data and I will answer using only the records shown here.' },
+  ])
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const trimmed = question.trim()
+    if (!trimmed) return
+
+    setMessages((current) => [...current, { role: 'user', content: trimmed }])
+    setLoading(true)
+    setQuestion('')
+
+    try {
+      const response = await fetch('/api/ai-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: trimmed, rows }),
+      })
+
+      const data = await response.json()
+      setMessages((current) => [...current, { role: 'assistant', content: data.answer || 'I could not generate an answer from the available data.' }])
+    } catch {
+      setMessages((current) => [...current, { role: 'assistant', content: 'I could not reach the assistant service right now. Please try again.' }])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="ai-assistant-wrap">
+      <button className="ai-assistant-toggle" onClick={() => setOpen((value) => !value)} type="button">
+        <IconSparkles />
+        <span>AI Assistant</span>
+      </button>
+
+      {open && (
+        <div className="ai-assistant-panel">
+          <div className="ai-assistant-header">
+            <div>
+              <h3>Data-based assistant</h3>
+              <p>Answers from the current dashboard records only.</p>
+            </div>
+            <button type="button" className="ai-assistant-close" onClick={() => setOpen(false)}>×</button>
+          </div>
+
+          <div className="ai-assistant-messages">
+            {messages.map((message, index) => (
+              <div key={`${message.role}-${index}`} className={`ai-assistant-bubble ${message.role}`}>
+                {message.content}
+              </div>
+            ))}
+            {loading && <div className="ai-assistant-bubble assistant">Thinking…</div>}
+          </div>
+
+          <form className="ai-assistant-form" onSubmit={handleSubmit}>
+            <input
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="Ask about the latest scores, best URLs, or comparisons"
+            />
+            <button type="submit" disabled={loading}>Send</button>
+          </form>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Home() {
   const [rows, setRows] = useState<any[]>([])
   const [lastUpdated, setLastUpdated] = useState('—')
   const [loading, setLoading] = useState(true)
   const [bulkRunning, setBulkRunning] = useState(false)
   const [bulkResults, setBulkResults] = useState<{ url: string; ok: boolean; msg: string }[] | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
+  const [showComparison, setShowComparison] = useState(false)
+  const [comparisonSelection, setComparisonSelection] = useState<string[]>([])
+  const [hoveredInsight, setHoveredInsight] = useState<any>(null)
+  const [selectedInsight, setSelectedInsight] = useState<any>(null)
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -398,8 +731,25 @@ export default function Home() {
       const rowData = websites
         .filter((site: any) => site.url && site.url.includes('moviesandtv.myvi.in'))
         .map((site: any) => {
-          const latestAudit = site.audits?.[0]
-          const metric = latestAudit?.metrics?.[0]
+          const auditHistory = (site.audits || []).map((audit: any) => ({
+            id: audit.id,
+            status: audit.status ?? 'complete',
+            error: audit.error ?? null,
+            performanceScore: audit.performanceScore ?? null,
+            accessibilityScore: audit.accessibilityScore ?? null,
+            bestPracticesScore: audit.bestPracticesScore ?? null,
+            seoScore: audit.seoScore ?? null,
+            createdAt: audit.createdAt,
+            metric: audit.metrics?.[0] ?? null,
+            categories: (audit.categories || []).map((category: any) => ({
+              id: category.id,
+              category: category.category,
+              score: category.score,
+              issues: normalizeCategoryIssues(category),
+            })),
+          }))
+          const latestAudit = auditHistory[0] ?? null
+          const metric = latestAudit?.metric ?? null
           const pageName = site.url ? new URL(site.url).pathname.replace(/\/$/, '') || '/' : site.title || site.url
           return {
             id: site.id,
@@ -407,7 +757,9 @@ export default function Home() {
             url: site.url,
             audit: latestAudit,
             metric,
+            categories: latestAudit?.categories || [],
             status: latestAudit?.status ?? 'pending',
+            history: auditHistory.slice(1),
           }
         })
 
@@ -468,6 +820,54 @@ export default function Home() {
     loadData()
   }, [loadData])
 
+  const handlePreviewInsight = useCallback((row: any, category: string) => {
+    if (!category) {
+      setHoveredInsight(null)
+      return
+    }
+
+    const details = getCategoryDetails(row, category)
+    const issues = resolveIssues(details)
+    const score = getCategoryScore(row, category)
+
+    setHoveredInsight({
+      label: getCategoryLabel(category),
+      url: row.url,
+      score,
+      issues,
+      raw: details,
+    })
+  }, [])
+
+  const handleOpenInsight = useCallback((row: any, category: string) => {
+    const details = getCategoryDetails(row, category)
+    const issues = resolveIssues(details)
+    const score = getCategoryScore(row, category)
+
+    setSelectedInsight({
+      label: getCategoryLabel(category),
+      url: row.url,
+      score,
+      issues,
+      raw: details,
+    })
+    setSelectedIssueId(issues[0]?.id ?? issues[0]?.ruleId ?? null)
+  }, [])
+
+  const toggleComparisonSelection = useCallback((url: string) => {
+    setComparisonSelection((current) => {
+      if (current.includes(url)) {
+        return current.filter((item) => item !== url)
+      }
+      if (current.length >= 3) {
+        return current
+      }
+      return [...current, url]
+    })
+  }, [])
+
+  const comparisonRows = rows.filter((row) => comparisonSelection.includes(row.url))
+
   // Calculate page load statistics from page-load time (TTI)
   const pageLoads = rows
     .map((row) => row.metric?.tti)
@@ -483,6 +883,12 @@ export default function Home() {
       <div className="bulk-bar">
         <button className="bulk-btn" onClick={runBulkAudits} disabled={bulkRunning}>
           {bulkRunning ? 'Running audits…' : 'Load (bulk audit myvi.in pages)'}
+        </button>
+        <button className="bulk-btn secondary" onClick={() => setShowHistory((value) => !value)}>
+          {showHistory ? 'Hide History' : 'History'}
+        </button>
+        <button className="bulk-btn secondary" onClick={() => setShowComparison((value) => !value)}>
+          {showComparison ? 'Hide Comparison' : 'Comparison'}
         </button>
         {bulkRunning && (
           <span className="bulk-status">Triggering audits for {BULK_TARGETS.length} URLs…</span>
@@ -502,7 +908,75 @@ export default function Home() {
       ) : (
         <>
           <Hero rows={rows} lastUpdated={lastUpdated} bestPageLoad={bestPageLoad} worstPageLoad={worstPageLoad} avgPageLoad={avgPageLoad} />
-          <ReportTable rows={rows} />
+          {hoveredInsight ? <InsightPreview insight={hoveredInsight} /> : null}
+          <AIAssistantPanel rows={rows} />
+          {showComparison && (
+            <section className="comparison-card">
+              <div className="comparison-head">
+                <div>
+                  <h3>Compare URLs</h3>
+                  <p>Select up to 3 URLs to compare their latest results.</p>
+                </div>
+                <span className="comparison-pill">{comparisonSelection.length}/3 selected</span>
+              </div>
+              <div className="comparison-selector">
+                {rows.map((row) => {
+                  const checked = comparisonSelection.includes(row.url)
+                  return (
+                    <label key={row.id} className={`comparison-chip ${checked ? 'is-selected' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleComparisonSelection(row.url)}
+                        disabled={!checked && comparisonSelection.length >= 3}
+                      />
+                      <div>
+                        <div className="comparison-chip-title">{row.pageName}</div>
+                        <div className="comparison-chip-url">{row.url}</div>
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+              {comparisonRows.length > 0 ? (
+                <div className="comparison-table-wrap">
+                  <table className="comparison-table">
+                    <thead>
+                      <tr>
+                        <th>Metric</th>
+                        {comparisonRows.map((row) => (
+                          <th key={row.id}>{row.pageName}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td className="comparison-metric-label">FCP</td>{comparisonRows.map((row) => <td key={row.id}>{fmt(msToSec(row.metric?.fcp), 1, ' s')}</td>)}</tr>
+                      <tr><td className="comparison-metric-label">LCP</td>{comparisonRows.map((row) => <td key={row.id}>{fmt(msToSec(row.metric?.lcp), 1, ' s')}</td>)}</tr>
+                      <tr><td className="comparison-metric-label">TBT</td>{comparisonRows.map((row) => <td key={row.id}>{fmtMs(row.metric?.tbt ?? null)}</td>)}</tr>
+                      <tr><td className="comparison-metric-label">CLS</td>{comparisonRows.map((row) => <td key={row.id}>{fmtCls(row.metric?.cls ?? null)}</td>)}</tr>
+                      <tr><td className="comparison-metric-label">Speed Index</td>{comparisonRows.map((row) => <td key={row.id}>{fmt(msToSec(row.metric?.speedIndex), 1, ' s')}</td>)}</tr>
+                      <tr><td className="comparison-metric-label">Accessibility</td>{comparisonRows.map((row) => <td key={row.id}>{row.audit?.accessibilityScore == null ? '—' : `${row.audit.accessibilityScore}%`}</td>)}</tr>
+                      <tr><td className="comparison-metric-label">Best Practices</td>{comparisonRows.map((row) => <td key={row.id}>{row.audit?.bestPracticesScore == null ? '—' : `${row.audit.bestPracticesScore}%`}</td>)}</tr>
+                      <tr><td className="comparison-metric-label">SEO</td>{comparisonRows.map((row) => <td key={row.id}>{row.audit?.seoScore == null ? '—' : `${row.audit.seoScore}%`}</td>)}</tr>
+                      <tr><td className="comparison-metric-label">Page Load</td>{comparisonRows.map((row) => <td key={row.id}>{fmt(msToSec(row.metric?.tti), 2, ' s')}</td>)}</tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="comparison-empty">Choose up to 3 URLs to compare their latest audit values.</div>
+              )}
+            </section>
+          )}
+          <ReportTable rows={rows} showHistory={showHistory} onPreviewInsight={handlePreviewInsight} onOpenInsight={handleOpenInsight} />
+          <InsightDrawer
+            insight={selectedInsight}
+            issue={selectedInsight?.issues?.find((item: any) => item.id === selectedIssueId) || null}
+            onSelectIssue={setSelectedIssueId}
+            onClose={() => {
+              setSelectedInsight(null)
+              setSelectedIssueId(null)
+            }}
+          />
           <div className="bottom-panels">
             <PerformanceOverview rows={rows} />
             <ScoreDistribution rows={rows} />

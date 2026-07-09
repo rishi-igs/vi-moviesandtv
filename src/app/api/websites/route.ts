@@ -12,7 +12,6 @@ export async function GET() {
       createdAt: true,
       audits: {
         orderBy: { createdAt: 'desc' },
-        take: 1,
         select: {
           id: true,
           status: true,

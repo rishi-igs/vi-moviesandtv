@@ -35,10 +35,49 @@ model Audit {
   createdAt          DateTime    @default(now()) @map("created_at")
   updatedAt          DateTime    @default(now()) @updatedAt @map("updated_at")
 
-  website Website  @relation(fields: [websiteId], references: [id])
-  metrics Metric[]
+  website    Website          @relation(fields: [websiteId], references: [id])
+  metrics    Metric[]
+  categories AuditCategory[]
+  issues     AuditIssue[]
 
   @@map("audits")
+}
+
+model AuditCategory {
+  id        Int      @id @default(autoincrement())
+  auditId   Int      @map("audit_id")
+  category  String
+  score     Float?   @map("score")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  audit  Audit        @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  issues AuditIssue[]
+
+  @@map("audit_categories")
+}
+
+model AuditIssue {
+  id               Int      @id @default(autoincrement())
+  auditId          Int      @map("audit_id")
+  categoryId       Int?     @map("category_id")
+  category         String
+  title            String
+  description      String?
+  score            Float?   @map("score")
+  severity         String?
+  explanation      String?
+  displayValue     String?  @map("display_value")
+  selector         String?
+  htmlSnippet      String?  @map("html_snippet")
+  recommendation   String?
+  documentationUrl String?  @map("documentation_url")
+  estimatedImpact  String?  @map("estimated_impact")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  audit        Audit          @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  categoryRef  AuditCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@map("audit_issues")
 }
 
 model Metric {

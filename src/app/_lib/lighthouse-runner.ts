@@ -1,11 +1,11 @@
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import lighthouse from 'lighthouse'
 import * as chromeLauncher from 'chrome-launcher'
-import type { LighthouseResult } from '@/app/_types'
-import http from 'http'
-import https from 'https'
+import type { LighthouseAuditIssue, LighthouseCategoryBreakdown, LighthouseResult } from '@/app/_types'
+import http from 'node:http'
+import https from 'node:https'
 
 const USER_DATA_DIR_PREFIX = 'lighthouse-user-data-'
 
@@ -16,7 +16,7 @@ function createUserDataDir(): string {
 async function killChromeInstance(chrome: chromeLauncher.LaunchedChrome): Promise<void> {
   try {
     if (typeof chrome.kill === 'function') {
-      await chrome.kill()
+      await Promise.resolve(chrome.kill())
       return
     }
   } catch (error) {
@@ -108,6 +108,50 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
 
     const { lhr } = result
 
+    const categoryNames = ['performance', 'accessibility', 'best-practices', 'seo'] as const
+    const categories: LighthouseCategoryBreakdown[] = categoryNames.map((categoryKey) => {
+      const category = lhr.categories[categoryKey]
+      const issues: LighthouseAuditIssue[] = Object.values(lhr.audits)
+        .filter((audit) => audit?.details?.debugData?.type === 'debugdata' || audit?.score !== null)
+        .filter((audit) => audit?.score !== null && audit.score < 1)
+        .map((audit) => {
+          const details = audit.details as { items?: Array<Record<string, unknown>> } | undefined
+          const failingNode = details?.items?.[0]
+          const selector = typeof failingNode?.selector === 'string' ? failingNode.selector : null
+          const snippet = typeof failingNode?.snippet === 'string' ? failingNode.snippet : null
+          const title = audit.title || 'Unnamed audit'
+          const description = audit.description || null
+          const explanation = audit.explanation || null
+          const displayValue = audit.displayValue || null
+          const recommendation = (audit as { recommendation?: string }).recommendation || null
+          const documentationUrl = (audit as { documentationUrl?: string }).documentationUrl || null
+          const severity = audit.scoreDisplayMode === 'binary' ? 'warning' : 'info'
+          const impact = audit.score === null ? 'Low' : audit.score < 0.5 ? 'High' : 'Medium'
+
+          return {
+            id: audit.id,
+            title,
+            description,
+            score: audit.score != null ? Math.round(audit.score * 100) : null,
+            severity,
+            explanation,
+            displayValue,
+            selector,
+            htmlSnippet: snippet,
+            recommendation,
+            documentationUrl,
+            estimatedImpact: impact,
+            category: categoryKey,
+          }
+        })
+
+      return {
+        category: categoryKey,
+        score: category?.score != null ? Math.round(category.score * 100) : null,
+        issues,
+      }
+    })
+
     return {
       url,
       performance: Math.round((lhr.categories.performance?.score ?? 0) * 100),
@@ -120,6 +164,7 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
       tbt: lhr.audits['total-blocking-time']?.numericValue ?? null,
       speedIndex: lhr.audits['speed-index']?.numericValue ?? null,
       tti: lhr.audits['interactive']?.numericValue ?? null,
+      categories,
     }
   } catch (error) {
     console.error('Lighthouse runner error:', error)

@@ -125,6 +125,29 @@ async function runAuditInBackground(
             tti: result.tti,
           },
         },
+        categories: {
+          create: result.categories.map((category) => ({
+            category: category.category,
+            score: category.score,
+            issues: {
+              create: category.issues.map((issue) => ({
+                category: category.category,
+                title: issue.title,
+                description: issue.description,
+                score: issue.score,
+                severity: issue.severity,
+                explanation: issue.explanation,
+                displayValue: issue.displayValue,
+                selector: issue.selector,
+                htmlSnippet: issue.htmlSnippet,
+                recommendation: issue.recommendation,
+                documentationUrl: issue.documentationUrl,
+                estimatedImpact: issue.estimatedImpact,
+                audit: { connect: { id: auditId } },
+              })),
+            },
+          })),
+        },
       },
     })
 
