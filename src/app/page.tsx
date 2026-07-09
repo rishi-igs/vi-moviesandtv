@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 
 export const dynamic = 'force-dynamic'
 
@@ -136,12 +136,43 @@ function SegmentedDonut({ segments, total, centerTop, centerBottom }: { segments
 // ---------------------------------------------------------------------------
 // Components
 // ---------------------------------------------------------------------------
-function BrandBar() {
+function BrandBar({ rows }: { rows?: any[] }) {
+  // Export UI is placed under the right logo to align visually with the bulk button
+  const [exportOpenLocal, setExportOpenLocal] = useState(false)
+  const exportRefLocal = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (exportRefLocal.current && !exportRefLocal.current.contains(e.target as Node)) {
+        setExportOpenLocal(false)
+      }
+    }
+    if (exportOpenLocal) document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [exportOpenLocal])
+
   return (
     <header className="brand-bar">
       <img className="logo-left" src="/Assets/images.png" alt="VI movies & tv" />
       <div className="brand-stripe"><span className="s1" /><span className="s2" /><span className="s3" /></div>
-      <img className="logo-right" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS Engineering Quality" />
+      <div className="brand-right-wrap">
+        <img className="logo-right" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS Engineering Quality" />
+        <div ref={exportRefLocal} className="export-wrap">
+          <button className="bulk-btn export-btn" onClick={() => setExportOpenLocal((s) => !s)} aria-expanded={exportOpenLocal} aria-haspopup="menu">
+            Export
+          </button>
+          {exportOpenLocal && (
+            <div className="export-dropdown" role="menu">
+              <button className="export-item" onClick={() => { setExportOpenLocal(false); import('../lib/exporter').then(m => m.exportRowsToXLSX(rows || [])); }}>
+                Export as Excel (.xlsx)
+              </button>
+              <button className="export-item" onClick={() => { setExportOpenLocal(false); import('../lib/exporter').then(m => m.exportRowsToPDF(rows || [])); }}>
+                Export as PDF (.pdf)
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </header>
   )
 }
@@ -389,6 +420,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [bulkRunning, setBulkRunning] = useState(false)
   const [bulkResults, setBulkResults] = useState<{ url: string; ok: boolean; msg: string }[] | null>(null)
+  
 
   const loadData = useCallback(async () => {
     try {
@@ -468,6 +500,8 @@ export default function Home() {
     loadData()
   }, [loadData])
 
+  
+
   // Calculate page load statistics from page-load time (TTI)
   const pageLoads = rows
     .map((row) => row.metric?.tti)
@@ -479,8 +513,9 @@ export default function Home() {
 
   return (
     <div className="page">
-      <BrandBar />
+      <BrandBar rows={rows} />
       <div className="bulk-bar">
+        
         <button className="bulk-btn" onClick={runBulkAudits} disabled={bulkRunning}>
           {bulkRunning ? 'Running audits…' : 'Load (bulk audit myvi.in pages)'}
         </button>
