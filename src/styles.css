@@ -477,6 +477,37 @@ td.col-url a span { overflow: hidden; text-overflow: ellipsis; }
   min-width: 220px;
 }
 .compare-controls { align-items: flex-start; }
+
+.export-bar {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--navy-900);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.export-btn:hover:not(:disabled) {
+  border-color: var(--acc-blue);
+  color: var(--acc-blue);
+}
+.export-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.export-btn svg {
+  width: 15px;
+  height: 15px;
+}
 .compare-selector { display: flex; align-items: center; gap: 6px; }
 .compare-remove-btn {
   width: 26px; height: 26px;

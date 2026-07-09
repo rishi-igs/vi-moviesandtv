@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { loadDashboardRows, loadInFlightAudits, loadCurrentBatch, startBulkAudit, loadAllAudits, loadAuditDiagnostics } from "./data.js";
+import { downloadExcel, downloadPdf, reportRowsToSheetRows, compareColumnsToSheetRows } from "./export.js";
 
 // ---------------------------------------------------------------------------
 // Icons (inline SVG components, stroke-based, no external icon library)
@@ -22,6 +23,7 @@ const IconAward = () => <svg {...svgProps}><circle cx="12" cy="8" r="6" /><path 
 const IconSearch = () => <svg {...svgProps}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>;
 const IconBarChart = () => <svg {...svgProps}><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /></svg>;
 const IconSparkles = () => <svg {...svgProps}><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3Z" /><path d="m19 15 0.7 2.3L22 18l-2.3 0.7L19 21l-0.7-2.3L16 18l2.3-0.7L19 15Z" /><path d="m5 15 0.7 2.3L8 18l-2.3 0.7L5 21l-0.7-2.3L2 18l2.3-0.7L5 15Z" /></svg>;
+const IconDownload = () => <svg {...svgProps}><path d="M12 15V3" /><path d="m7 10 5 5 5-5" /><path d="M21 21H3" /></svg>;
 
 // ---------------------------------------------------------------------------
 // Threshold -> CSS class helpers (Lighthouse standard breakpoints)
@@ -52,6 +54,36 @@ function maxOf(nums) {
 }
 function donutGradient(pct, color) {
   return pct == null ? "#e7eaf0" : `conic-gradient(${color} ${pct * 3.6}deg, #e7eaf0 0deg)`;
+}
+
+// ---------------------------------------------------------------------------
+// Export bar — reused by the Report, History, and Compare tabs. `onExcel`
+// builds the sheet(s) from the tab's current data; `onPdf` rasterizes
+// `targetRef`'s DOM so the PDF matches the on-screen UI exactly.
+// ---------------------------------------------------------------------------
+function ExportBar({ targetRef, onExcel, pdfFilename, disabled }) {
+  const [exporting, setExporting] = useState(false);
+
+  async function handlePdf() {
+    if (!targetRef.current || exporting) return;
+    setExporting(true);
+    try {
+      await downloadPdf(targetRef.current, pdfFilename);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="export-bar">
+      <button className="export-btn" onClick={onExcel} disabled={disabled}>
+        <IconDownload /><span>Export Excel</span>
+      </button>
+      <button className="export-btn" onClick={handlePdf} disabled={disabled || exporting}>
+        <IconDownload /><span>{exporting ? "Generating PDF…" : "Export PDF"}</span>
+      </button>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -453,9 +485,13 @@ function HistoryTab({ audits }) {
     .filter(a => a.url === selectedUrl)
     .sort((a, b) => new Date(b.auditedAt) - new Date(a.auditedAt));
 
+  const historyRef = useRef(null);
+
   if (pages.length === 0) {
     return <p className="no-data-note">No completed audits yet.</p>;
   }
+
+  const selectedPage = pages.find(p => p.url === selectedUrl)?.page ?? "history";
 
   return (
     <div>
@@ -466,7 +502,17 @@ function HistoryTab({ audits }) {
         </select>
         <span className="bulk-audit-summary">{rows.length} audit{rows.length === 1 ? "" : "s"} recorded</span>
       </div>
-      <ReportTable rows={rows} />
+      <ExportBar
+        targetRef={historyRef}
+        disabled={rows.length === 0}
+        pdfFilename={`history-${selectedPage.replace(/[^a-z0-9]+/gi, "-")}.pdf`}
+        onExcel={() => downloadExcel(`history-${selectedPage.replace(/[^a-z0-9]+/gi, "-")}.xlsx`, [
+          { name: "History", rows: reportRowsToSheetRows(rows, { includeDate: true }) }
+        ])}
+      />
+      <div ref={historyRef}>
+        <ReportTable rows={rows} />
+      </div>
     </div>
   );
 }
@@ -526,6 +572,8 @@ function CompareTab({ audits }) {
     .map(id => options.find(a => String(a.auditId) === id))
     .filter(Boolean);
 
+  const compareRef = useRef(null);
+
   return (
     <div>
       <div className="tab-controls compare-controls">
@@ -544,10 +592,19 @@ function CompareTab({ audits }) {
           <button className="compare-add-btn" onClick={addSelector}>+ Add audit</button>
         )}
       </div>
+      {columns.length >= 2 && (
+        <ExportBar
+          targetRef={compareRef}
+          pdfFilename="performance-comparison.pdf"
+          onExcel={() => downloadExcel("performance-comparison.xlsx", [
+            { name: "Comparison", rows: compareColumnsToSheetRows(compareMetrics, columns) }
+          ])}
+        />
+      )}
       {columns.length < 2 ? (
         <p className="no-data-note">Select at least two audits to compare.</p>
       ) : (
-        <div className="panel compare-panel">
+        <div className="panel compare-panel" ref={compareRef}>
           <div className="panel-body">
             <div className="compare-table-scroll">
               <table className="compare-table">
@@ -798,6 +855,7 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState("—");
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("report");
+  const reportRef = useRef(null);
 
   function load() {
     loadDashboardRows()
@@ -836,12 +894,22 @@ export default function App() {
             <div style={{ color: "var(--bad)", textAlign: "center", padding: 20 }}>Failed to load data: {error}</div>
           ) : (
             <>
-              <ReportTable rows={rows} />
-              <section className="summary-grid">
-                <OverviewPanel rows={rows} />
-                <ScoreDistributionPanel rows={rows} />
-                <RatingPanel rows={rows} />
-              </section>
+              <ExportBar
+                targetRef={reportRef}
+                disabled={rows.length === 0}
+                pdfFilename="website-performance-report.pdf"
+                onExcel={() => downloadExcel("website-performance-report.xlsx", [
+                  { name: "Report", rows: reportRowsToSheetRows(rows) }
+                ])}
+              />
+              <div ref={reportRef}>
+                <ReportTable rows={rows} />
+                <section className="summary-grid">
+                  <OverviewPanel rows={rows} />
+                  <ScoreDistributionPanel rows={rows} />
+                  <RatingPanel rows={rows} />
+                </section>
+              </div>
             </>
           )}
         </>
