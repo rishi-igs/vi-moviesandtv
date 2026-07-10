@@ -58,6 +58,11 @@ async function postAuditRequest(url) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url }),
+          // The API now responds immediately (audit runs server-side in the
+          // background), so this round trip should be sub-second. Fail fast
+          // instead of holding the service worker's fetch open indefinitely
+          // if that ever regresses.
+          signal: AbortSignal.timeout(8000),
         })
 
         const text = await res.text()

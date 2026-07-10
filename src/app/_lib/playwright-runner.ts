@@ -1,11 +1,11 @@
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import lighthouse from 'lighthouse'
 import type { LighthouseResult } from '@/app/_types'
 import { extractDiagnostics } from '@/app/_lib/lighthouse-diagnostics'
 import { chromium } from 'playwright'
-import net from 'net'
+import net from 'node:net'
 
 const USER_DATA_DIR_PREFIX = 'lighthouse-user-data-'
 
@@ -99,6 +99,49 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
     if (!result?.lhr) throw new Error('Lighthouse returned no result')
 
     const { lhr } = result
+
+    const categoryNames = ['performance', 'accessibility', 'best-practices', 'seo'] as const
+    const categories: LighthouseCategoryBreakdown[] = categoryNames.map((categoryKey) => {
+      const category = lhr.categories[categoryKey]
+      const issues: LighthouseAuditIssue[] = Object.values(lhr.audits)
+        .filter((audit) => audit?.score !== null && audit.score < 1)
+        .map((audit) => {
+          const details = audit.details as { items?: Array<Record<string, unknown>> } | undefined
+          const failingNode = details?.items?.[0]
+          const selector = typeof failingNode?.selector === 'string' ? failingNode.selector : null
+          const snippet = typeof failingNode?.snippet === 'string' ? failingNode.snippet : null
+          const title = audit.title || 'Unnamed audit'
+          const description = audit.description || null
+          const explanation = audit.explanation || null
+          const displayValue = audit.displayValue || null
+          const recommendation = (audit as { recommendation?: string }).recommendation || null
+          const documentationUrl = (audit as { documentationUrl?: string }).documentationUrl || null
+          const severity = audit.scoreDisplayMode === 'binary' ? 'warning' : 'info'
+          const impact = audit.score === null ? 'Low' : audit.score < 0.5 ? 'High' : 'Medium'
+
+          return {
+            id: audit.id,
+            title,
+            description,
+            score: audit.score != null ? Math.round(audit.score * 100) : null,
+            severity,
+            explanation,
+            displayValue,
+            selector,
+            htmlSnippet: snippet,
+            recommendation,
+            documentationUrl,
+            estimatedImpact: impact,
+            category: categoryKey,
+          }
+        })
+
+      return {
+        category: categoryKey,
+        score: category?.score != null ? Math.round(category.score * 100) : null,
+        issues,
+      }
+    })
 
     return {
       url,

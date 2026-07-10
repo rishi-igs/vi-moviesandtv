@@ -1,6 +1,6 @@
 const http = require("http");
 const run = (path) => {
-  const data = JSON.stringify({ url: "https://www.kirloskarpumps.com" });
+  const data = JSON.stringify({ url: "https://moviesandtv.myvi.in" });
   const opts = { hostname: "127.0.0.1", port: 3002, path, method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) } };
   const req = http.request(opts, res => {
     let body = "";
@@ -17,8 +17,4 @@ const run = (path) => {
   req.end();
 };
 run('/api/audit');
-<<<<<<< HEAD
 run('/api/websites');
-=======
-run('/api/websites');
->>>>>>> 7eb55d6a7a8c7ea0f65727a603648df4e4fca5b9

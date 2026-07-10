@@ -12,9 +12,10 @@ export async function GET() {
       createdAt: true,
       audits: {
         orderBy: { createdAt: 'desc' },
-        take: 1,
         select: {
           id: true,
+          status: true,
+          error: true,
           performanceScore: true,
           accessibilityScore: true,
           bestPracticesScore: true,
@@ -29,6 +30,7 @@ export async function GET() {
               cls: true,
               tbt: true,
               speedIndex: true,
+              tti: true,
             },
           },
         },

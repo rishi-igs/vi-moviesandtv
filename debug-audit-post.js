@@ -1,5 +1,5 @@
 ﻿const http = require("http");
-const data = JSON.stringify({ url: "https://www.kirloskarpumps.com" });
+const data = JSON.stringify({ url: "https://moviesandtv.myvi.in" });
 const opts = {
   hostname: "127.0.0.1",
   port: 3002,
@@ -23,8 +23,4 @@ req.on('error', (err) => {
   console.error('error', err.message);
 });
 req.write(data);
-<<<<<<< HEAD
 req.end();
-=======
-req.end();
->>>>>>> 7eb55d6a7a8c7ea0f65727a603648df4e4fca5b9
