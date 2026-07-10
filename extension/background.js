@@ -58,11 +58,12 @@ async function postAuditRequest(url) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url }),
-          // The API now responds immediately (audit runs server-side in the
-          // background), so this round trip should be sub-second. Fail fast
-          // instead of holding the service worker's fetch open indefinitely
-          // if that ever regresses.
-          signal: AbortSignal.timeout(8000),
+          // The API call is synchronous — it waits for the full Lighthouse
+          // run to finish before responding (15-25s+ typical, longer if
+          // AUDIT_POOL_SIZE serializes this behind other in-flight audits).
+          // 8s was way too short and aborted every real audit before the
+          // server could finish, surfacing as a false "network error".
+          signal: AbortSignal.timeout(60000),
         })
 
         const text = await res.text()
