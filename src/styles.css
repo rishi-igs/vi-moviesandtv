@@ -397,6 +397,39 @@ td.col-url a span { overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- Bulk audit panel ---------- */
 .bulk-audit-panel { margin-top: 18px; }
+.bulk-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.bulk-file-input { display: none; }
+.bulk-file-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: #f9fafb;
+  color: var(--navy-700);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.bulk-file-label:hover {
+  border-color: var(--acc-blue);
+  color: var(--acc-blue);
+  background: #eff6ff;
+}
+.bulk-file-name {
+  font-size: 12px;
+  color: var(--text-500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .bulk-audit-panel textarea {
   width: 100%;
   min-height: 90px;

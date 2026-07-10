@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { loadDashboardRows, loadInFlightAudits, loadCurrentBatch, startBulkAudit, loadAllAudits, loadAuditDiagnostics } from "./data.js";
 import { downloadExcel, downloadPdf, downloadDiagnosticsPdf, generatePdfData, reportRowsToSheetRows, compareColumnsToSheetRows } from "./export.js";
+import * as XLSX from "xlsx";
 
 // ---------------------------------------------------------------------------
 // Icons (inline SVG components, stroke-based, no external icon library)
@@ -377,9 +378,68 @@ function BulkAuditPanel() {
   const [batch, setBatch] = useState(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState(null);
+  const [fileName, setFileName] = useState("");
+  const fileRef = useRef(null);
 
   function parseUrls(raw) {
     return [...new Set(raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean))];
+  }
+
+  function extractUrlsFromSheet(data) {
+    const lines = [];
+    if (Array.isArray(data)) {
+      for (const row of data) {
+        if (!row) continue;
+        const vals = Object.values(row).filter(v => typeof v === "string" || typeof v === "number");
+        for (const v of vals) {
+          const s = String(v).trim();
+          if (s && /^https?:\/\//i.test(s)) lines.push(s);
+        }
+      }
+    }
+    return lines;
+  }
+
+  async function handleFileUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    const ext = file.name.split(".").pop()?.toLowerCase();
+
+    try {
+      const buf = await file.arrayBuffer();
+
+      if (ext === "xlsx" || ext === "xls") {
+        const wb = XLSX.read(buf, { type: "array" });
+        const allLines = [];
+        for (const name of wb.SheetNames) {
+          const sheet = wb.Sheets[name];
+          const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+          for (const row of data) {
+            if (!Array.isArray(row)) continue;
+            for (const cell of row) {
+              const s = String(cell ?? "").trim();
+              if (s && /^https?:\/\//i.test(s)) allLines.push(s);
+            }
+          }
+          if (allLines.length === 0) {
+            const raw = XLSX.utils.sheet_to_json(sheet);
+            allLines.push(...extractUrlsFromSheet(raw));
+          }
+        }
+        const merged = text ? text + "\n" + allLines.join("\n") : allLines.join("\n");
+        setText(merged);
+      } else {
+        const raw = new TextDecoder().decode(buf);
+        const lines = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        const merged = text ? text + "\n" + lines.join("\n") : lines.join("\n");
+        setText(merged);
+      }
+    } catch (err) {
+      setStartError("Failed to read file: " + err.message);
+    }
+
+    if (fileRef.current) fileRef.current.value = "";
   }
 
   useEffect(() => {
@@ -387,8 +447,6 @@ function BulkAuditPanel() {
       loadCurrentBatch().then(setBatch).catch(() => {});
     }
     poll();
-    // Polls the server-tracked batch rather than driving progress locally, so
-    // this reflects the true state even after a refresh or a closed tab.
     const interval = setInterval(poll, 4000);
     return () => clearInterval(interval);
   }, []);
@@ -405,6 +463,7 @@ function BulkAuditPanel() {
       const newBatch = await startBulkAudit(urls);
       setBatch(newBatch);
       setText("");
+      setFileName("");
     } catch (e) {
       setStartError(e.message);
     } finally {
@@ -419,6 +478,11 @@ function BulkAuditPanel() {
     <div className="panel bulk-audit-panel">
       <div className="panel-title">Bulk Audit</div>
       <div className="panel-body">
+        <div className="bulk-upload-row">
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.txt" onChange={handleFileUpload} className="bulk-file-input" id="bulk-file-input" />
+          <label htmlFor="bulk-file-input" className="bulk-file-label">Choose File</label>
+          <span className="bulk-file-name">{fileName || "Upload .xlsx, .csv, or .txt"}</span>
+        </div>
         <textarea
           value={text}
           onChange={e => setText(e.target.value)}
@@ -447,7 +511,6 @@ function BulkAuditPanel() {
             ))}
           </div>
         )}
-        {/* <p className="no-data-note">Only myvi.in URLs are audited — anything else is rejected automatically. Audits run one at a time (~1-2 min each) on the server, so progress here survives a refresh or a closed tab.</p> */}
       </div>
     </div>
   );
