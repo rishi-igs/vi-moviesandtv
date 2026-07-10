@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import lighthouse from 'lighthouse'
-import type { LighthouseResult } from '@/app/_types'
+import type { LighthouseAuditIssue, LighthouseCategoryBreakdown, LighthouseResult } from '@/app/_types'
 import { extractDiagnostics } from '@/app/_lib/lighthouse-diagnostics'
 import { chromium } from 'playwright'
 import net from 'net'
@@ -99,6 +99,32 @@ export async function runLighthouseAudit(url: string): Promise<LighthouseResult>
     if (!result?.lhr) throw new Error('Lighthouse returned no result')
 
     const { lhr } = result
+
+    const categories: LighthouseCategoryBreakdown[] = ['performance', 'accessibility', 'best-practices', 'seo'].map((categoryKey) => {
+      const category = lhr.categories[categoryKey]
+      const issues: LighthouseAuditIssue[] = Object.values(lhr.audits)
+        .filter((audit) => audit?.score !== null && audit.score < 1)
+        .map((audit) => ({
+          id: audit.id,
+          title: audit.title || 'Unnamed audit',
+          description: audit.description || null,
+          score: audit.score != null ? Math.round(audit.score * 100) : null,
+          severity: audit.scoreDisplayMode === 'binary' ? 'warning' : 'info',
+          explanation: audit.explanation || null,
+          displayValue: audit.displayValue || null,
+          selector: null,
+          htmlSnippet: null,
+          recommendation: null,
+          documentationUrl: null,
+          estimatedImpact: audit.score === null ? 'Low' : audit.score < 0.5 ? 'High' : 'Medium',
+          category: categoryKey,
+        }))
+      return {
+        category: categoryKey,
+        score: category?.score != null ? Math.round(category.score * 100) : null,
+        issues,
+      }
+    })
 
     return {
       url,

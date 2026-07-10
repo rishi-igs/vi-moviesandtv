@@ -1,3 +1,25 @@
+export interface LighthouseAuditIssue {
+  id: string
+  title: string
+  description: string | null
+  score: number | null
+  severity: string | null
+  explanation: string | null
+  displayValue: string | null
+  selector: string | null
+  htmlSnippet: string | null
+  recommendation: string | null
+  documentationUrl: string | null
+  estimatedImpact: string | null
+  category: string
+}
+
+export interface LighthouseCategoryBreakdown {
+  category: string
+  score: number | null
+  issues: LighthouseAuditIssue[]
+}
+
 export interface LighthouseResult {
   url: string
   performance: number

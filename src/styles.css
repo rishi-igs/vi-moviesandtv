@@ -728,3 +728,102 @@ footer.credit {
   opacity: 0.7;
   cursor: default;
 }
+
+/* Email Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.modal-dialog {
+  background: #fff;
+  border-radius: 12px;
+  padding: 28px;
+  width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
+}
+.modal-dialog h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  color: var(--navy-900);
+}
+.modal-hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #6b7280;
+}
+.modal-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.modal-input:focus {
+  outline: none;
+  border-color: var(--acc-blue);
+}
+.modal-error {
+  color: var(--bad);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+.modal-btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--navy-900);
+}
+.modal-btn-send {
+  background: var(--acc-blue);
+  color: #fff;
+  border-color: var(--acc-blue);
+}
+.modal-btn-send:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.modal-btn-cancel:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.modal-done {
+  text-align: center;
+  padding: 30px 20px;
+  font-size: 16px;
+  color: #16a34a;
+  font-weight: 600;
+}
+.modal-done-icon {
+  font-size: 32px;
+  margin-bottom: 10px;
+}
+.modal-done-sub {
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: #6b7280;
+  line-height: 1.5;
+}
+.modal-done-sub code {
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+}

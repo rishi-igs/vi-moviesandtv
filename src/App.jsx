@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { loadDashboardRows, loadInFlightAudits, loadCurrentBatch, startBulkAudit, loadAllAudits, loadAuditDiagnostics } from "./data.js";
-import { downloadExcel, downloadPdf, downloadDiagnosticsPdf, reportRowsToSheetRows, compareColumnsToSheetRows } from "./export.js";
+import { downloadExcel, downloadPdf, downloadDiagnosticsPdf, generatePdfData, reportRowsToSheetRows, compareColumnsToSheetRows } from "./export.js";
 
 // ---------------------------------------------------------------------------
 // Icons (inline SVG components, stroke-based, no external icon library)
@@ -24,6 +24,7 @@ const IconSearch = () => <svg {...svgProps}><circle cx="11" cy="11" r="8" /><pat
 const IconBarChart = () => <svg {...svgProps}><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /></svg>;
 const IconSparkles = () => <svg {...svgProps}><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3Z" /><path d="m19 15 0.7 2.3L22 18l-2.3 0.7L19 21l-0.7-2.3L16 18l2.3-0.7L19 15Z" /><path d="m5 15 0.7 2.3L8 18l-2.3 0.7L5 21l-0.7-2.3L2 18l2.3-0.7L5 15Z" /></svg>;
 const IconDownload = () => <svg {...svgProps}><path d="M12 15V3" /><path d="m7 10 5 5 5-5" /><path d="M21 21H3" /></svg>;
+const IconMail = () => <svg {...svgProps}><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>;
 
 // ---------------------------------------------------------------------------
 // Threshold -> CSS class helpers (Lighthouse standard breakpoints)
@@ -141,6 +142,7 @@ function PageFilter({ rows, selected, onChange }) {
 function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows, diagnosticsFilename, children }) {
   const [exporting, setExporting] = useState(false);
   const [exportingDiagnostics, setExportingDiagnostics] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
 
   async function handlePdf() {
     if (!targetRef.current || exporting) return;
@@ -169,6 +171,27 @@ function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows,
     }
   }
 
+  async function handleSendEmail(email) {
+    if (!targetRef.current) return;
+    const dataUrl = await generatePdfData(targetRef.current);
+    const base64 = dataUrl.split(",")[1];
+    const res = await fetch("/api/send-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: email,
+        subject: `Performance Report — ${document.title || pdfFilename}`,
+        body: `Please find the attached performance report (${pdfFilename}).`,
+        attachment: { data: base64, filename: pdfFilename },
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to send email");
+    }
+    return data;
+  }
+
   return (
     <div className="export-bar">
       {children}
@@ -183,7 +206,89 @@ function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows,
           <IconDownload /><span>{exportingDiagnostics ? "Gathering findings…" : "Export Diagnostics PDF"}</span>
         </button>
       )}
+      <button className="export-btn" onClick={() => setShowEmail(true)} disabled={disabled || exporting}>
+        <IconMail /><span>Send Email</span>
+      </button>
+      <EmailModal visible={showEmail} exporting={exporting} onSend={handleSendEmail} onClose={() => setShowEmail(false)} />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Email Modal — overlaid when the user clicks "Send Email"
+// ---------------------------------------------------------------------------
+function EmailModal({ visible, exporting, onSend, onClose }) {
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(false);
+  const [devMode, setDevMode] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!visible) return null;
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setSending(true);
+    setError("");
+    try {
+      const data = await onSend(email.trim());
+      setDevMode(!!data.dev);
+      setDone(true);
+      setTimeout(() => { setDone(false); setDevMode(false); onClose(); }, 4000);
+    } catch (err) {
+      setError(err.message || "Failed to send");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-dialog" onClick={e => e.stopPropagation()}>
+        {done ? (
+          <div className="modal-done">
+            {devMode ? (
+              <>
+                <div className="modal-done-icon">📧</div>
+                <div>Email saved locally</div>
+                <p className="modal-done-sub">SMTP not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS in .env for live sending. The email data was saved to <code>public/emails/</code>.</p>
+              </>
+            ) : (
+              <>
+                <div className="modal-done-icon">✓</div>
+                <div>Email sent successfully!</div>
+              </>
+            )}
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <h3>Send Report via Email</h3>
+            <p className="modal-hint">The PDF report will be attached to the email.</p>
+            <input
+              className="modal-input"
+              type="email"
+              placeholder="recipient@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              disabled={sending}
+              autoFocus
+              required
+            />
+            {error ? <p className="modal-error">{error}</p> : null}
+            <div className="modal-actions">
+              <button type="button" className="modal-btn modal-btn-cancel" onClick={onClose} disabled={sending}>
+                Cancel
+              </button>
+              <button type="submit" className="modal-btn modal-btn-send" disabled={sending || !email.trim()}>
+                {sending ? "Sending…" : "Send"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>,
+    document.body
   );
 }
 

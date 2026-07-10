@@ -239,6 +239,35 @@ export function downloadDiagnosticsPdf(filename, sections) {
   pdf.save(filename);
 }
 
+// Same rasterization as downloadPdf, but returns the PDF as a data URI
+// instead of triggering a download — used to attach the dashboard PDF to an
+// outgoing email (see handleSendEmail in App.jsx).
+export async function generatePdfData(element) {
+  const restoreExpand = expandForCapture(element);
+  const restoreGradients = replaceConicGradients(element);
+  let canvas;
+  try {
+    canvas = await html2canvas(element, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      useCORS: true
+    });
+  } finally {
+    restoreGradients();
+    restoreExpand();
+  }
+
+  const imgWidthPt = canvas.width / 2;
+  const imgHeightPt = canvas.height / 2;
+  const pdf = new jsPDF({
+    orientation: imgWidthPt >= imgHeightPt ? "landscape" : "portrait",
+    unit: "pt",
+    format: [imgWidthPt, imgHeightPt]
+  });
+  pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, imgWidthPt, imgHeightPt);
+  return pdf.output("datauristring");
+}
+
 export function reportRowsToSheetRows(rows, { includeDate = false } = {}) {
   return rows.map((r, i) => {
     const row = {
