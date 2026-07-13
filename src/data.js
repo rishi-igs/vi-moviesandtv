@@ -71,8 +71,10 @@ export async function loadDashboardRows(opts) {
 
 // Server-truth "what's auditing right now" — backed by the server's in-memory
 // queue, not client state, so it survives a page refresh.
-export async function loadInFlightAudits() {
-  const res = await fetch("/api/audit-status", { cache: "no-store" });
+export async function loadInFlightAudits(opts) {
+  const brand = opts?.brand;
+  const qs = brand && brand !== "all" ? `?brand=${encodeURIComponent(brand)}` : "";
+  const res = await fetch(`/api/audit-status${qs}`, { cache: "no-store" });
   if (!res.ok) return [];
   const data = await res.json();
   return data.inFlight ?? [];
@@ -81,8 +83,10 @@ export async function loadInFlightAudits() {
 // The current/most recent bulk-audit batch. The server drives the batch to
 // completion itself, so polling this reflects true progress even after a
 // refresh or a closed tab.
-export async function loadCurrentBatch() {
-  const res = await fetch("/api/audit-batch", { cache: "no-store" });
+export async function loadCurrentBatch(opts) {
+  const brand = opts?.brand;
+  const qs = brand && brand !== "all" ? `?brand=${encodeURIComponent(brand)}` : "";
+  const res = await fetch(`/api/audit-batch${qs}`, { cache: "no-store" });
   if (!res.ok) return null;
   const data = await res.json();
   return data.batch ?? null;

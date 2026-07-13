@@ -379,7 +379,7 @@ function Hero({ rows, lastUpdated }) {
       <div className="hero-left">
         <div className="hero-icon"><IconGauge /></div>
         <div>
-          <h1>WEBSITE PERFORMANCE REPORT
+          <h1>IGS BEACON
             <span className="live-badge"><span className="dot" />LIVE</span>
           </h1>
           <div className="hero-sub">
@@ -413,7 +413,7 @@ function InFlightPanel({ items }) {
   );
 }
 
-function BulkAuditPanel() {
+function BulkAuditPanel({ brand }) {
   const [text, setText] = useState("");
   const [batch, setBatch] = useState(null);
   const [starting, setStarting] = useState(false);
@@ -483,13 +483,15 @@ function BulkAuditPanel() {
   }
 
   useEffect(() => {
+    let cancelled = false;
     function poll() {
-      loadCurrentBatch().then(setBatch).catch(() => {});
+      loadCurrentBatch({ brand }).then(data => { if (!cancelled) setBatch(data); }).catch(() => {});
     }
+    setBatch(null);
     poll();
     const interval = setInterval(poll, 4000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [brand]);
 
   const items = batch?.items ?? [];
   const running = items.some(it => it.status === "queued" || it.status === "running");
@@ -1200,7 +1202,7 @@ function BrandLanding({ onSelect }) {
         <div className="landing-brand">
           <img className="landing-logo" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS" />
         </div>
-        <h1>Lighthouse Performance Tracker</h1>
+        <h1>IGS BEACON</h1>
         <p className="landing-sub">Select a brand to view its Lighthouse audit dashboard</p>
       </header>
       <div className="brand-grid">
@@ -1242,24 +1244,36 @@ export default function App() {
   const brand = page === "home" ? "all" : page;
   const brandLabel = BRANDS.find(b => b.id === page)?.label ?? null;
 
-  function load() {
-    loadDashboardRows({ brand })
-      .then(data => {
-        setRows(data);
-        setLastUpdated(new Date().toLocaleString());
-        setError(null);
-      })
-      .catch(e => setError(e.message));
-    loadInFlightAudits().then(setInFlight);
-    loadAllAudits({ brand }).then(setAllAudits);
-  }
-
   useEffect(() => {
-    if (page !== "home") {
-      load();
-      const interval = setInterval(load, 10000);
-      return () => clearInterval(interval);
+    if (page === "home") return;
+
+    // Clear immediately so the previous brand's data doesn't flash on screen
+    // while the new brand's fetch is still in flight.
+    setRows([]);
+    setInFlight([]);
+    setAllAudits([]);
+
+    // Guards against a stale response landing after the brand was switched
+    // again — without this, a slow VI fetch resolving after you've already
+    // navigated to Red Bull can overwrite the correct state with stale data.
+    let cancelled = false;
+
+    function load() {
+      loadDashboardRows({ brand })
+        .then(data => {
+          if (cancelled) return;
+          setRows(data);
+          setLastUpdated(new Date().toLocaleString());
+          setError(null);
+        })
+        .catch(e => { if (!cancelled) setError(e.message); });
+      loadInFlightAudits({ brand }).then(data => { if (!cancelled) setInFlight(data); });
+      loadAllAudits({ brand }).then(data => { if (!cancelled) setAllAudits(data); });
     }
+
+    load();
+    const interval = setInterval(load, 10000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [page]);
 
   if (page === "home") {
@@ -1282,7 +1296,7 @@ export default function App() {
       {tab === "report" && (
         <>
           <InFlightPanel items={inFlight} />
-          <BulkAuditPanel />
+          <BulkAuditPanel brand={brand} />
           {error ? (
             <div style={{ color: "var(--bad)", textAlign: "center", padding: 20 }}>Failed to load data: {error}</div>
           ) : (
