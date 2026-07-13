@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { loadDashboardRows, loadInFlightAudits, loadCurrentBatch, startBulkAudit, loadAllAudits, loadAuditDiagnostics } from "./data.js";
-import { downloadExcel, downloadPdf, reportRowsToSheetRows, compareColumnsToSheetRows } from "./export.js";
+import { downloadExcel, downloadPdf, downloadDiagnosticsPdf, reportRowsToSheetRows, compareColumnsToSheetRows } from "./export.js";
 
 // ---------------------------------------------------------------------------
 // Icons (inline SVG components, stroke-based, no external icon library)
@@ -56,13 +56,91 @@ function donutGradient(pct, color) {
   return pct == null ? "#e7eaf0" : `conic-gradient(${color} ${pct * 3.6}deg, #e7eaf0 0deg)`;
 }
 
+// Every metric key MetricCell shows a hover-diagnosis tooltip for, in the
+// order they should appear in the PDF appendix.
+const METRIC_DEFS = [
+  { key: "fcp", label: "First Contentful Paint" },
+  { key: "lcp", label: "Largest Contentful Paint" },
+  { key: "tbt", label: "Total Blocking Time" },
+  { key: "cls", label: "Cumulative Layout Shift" },
+  { key: "si", label: "Speed Index" },
+  { key: "accessibility", label: "Accessibility" },
+  { key: "bestPractices", label: "Best Practices" },
+  { key: "seo", label: "SEO" }
+];
+
 // ---------------------------------------------------------------------------
 // Export bar — reused by the Report, History, and Compare tabs. `onExcel`
 // builds the sheet(s) from the tab's current data; `onPdf` rasterizes
 // `targetRef`'s DOM so the PDF matches the on-screen UI exactly.
 // ---------------------------------------------------------------------------
-function ExportBar({ targetRef, onExcel, pdfFilename, disabled }) {
+// Multi-select checklist for scoping the Report tab (and its export) down to
+// specific pages — with 30+ audited URLs, exporting everything (especially
+// with the diagnosis appendix) produces an unwieldy PDF. `selected` is a Set
+// of URLs, or null meaning "all" (the default, so behavior is unchanged
+// until someone actually narrows it down).
+function PageFilter({ rows, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const popoverRef = useRef(null);
+
+  const pages = useMemo(() => {
+    const map = new Map();
+    rows.forEach(r => { if (!map.has(r.url)) map.set(r.url, r.page); });
+    return [...map.entries()].map(([url, page]) => ({ url, page }));
+  }, [rows]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  const allSelected = selected == null;
+  const count = allSelected ? pages.length : selected.size;
+
+  function toggle(url) {
+    const next = new Set(allSelected ? pages.map(p => p.url) : selected);
+    if (next.has(url)) next.delete(url);
+    else next.add(url);
+    onChange(next.size === pages.length ? null : next);
+  }
+
+  return (
+    <div className="page-filter" ref={popoverRef}>
+      <button className="export-btn" onClick={() => setOpen(o => !o)}>
+        <IconLayers />
+        <span>{allSelected ? "All Pages" : `${count} of ${pages.length} Pages`}</span>
+      </button>
+      {open && (
+        <div className="page-filter-popover">
+          <div className="page-filter-actions">
+            <button onClick={() => onChange(null)}>Select all</button>
+            <button onClick={() => onChange(new Set())}>Clear</button>
+          </div>
+          <div className="page-filter-list">
+            {pages.map(p => (
+              <label className="page-filter-item" key={p.url}>
+                <input
+                  type="checkbox"
+                  checked={allSelected || selected.has(p.url)}
+                  onChange={() => toggle(p.url)}
+                />
+                <span title={p.url}>{p.page}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows, diagnosticsFilename, children }) {
   const [exporting, setExporting] = useState(false);
+  const [exportingDiagnostics, setExportingDiagnostics] = useState(false);
 
   async function handlePdf() {
     if (!targetRef.current || exporting) return;
@@ -74,14 +152,37 @@ function ExportBar({ targetRef, onExcel, pdfFilename, disabled }) {
     }
   }
 
+  async function handleDiagnosticsPdf() {
+    if (exportingDiagnostics || !diagnosticsRows || !diagnosticsRows.length) return;
+    setExportingDiagnostics(true);
+    try {
+      const diagnosticsList = await Promise.all(diagnosticsRows.map(r => loadAuditDiagnostics(r.auditId)));
+      const sections = diagnosticsRows.map((r, i) => ({
+        title: `${r.page} — ${r.url}`,
+        groups: METRIC_DEFS
+          .map(def => ({ label: def.label, entries: diagnosticsList[i]?.[def.key] ?? [] }))
+          .filter(g => g.entries.length)
+      }));
+      downloadDiagnosticsPdf(diagnosticsFilename, sections);
+    } finally {
+      setExportingDiagnostics(false);
+    }
+  }
+
   return (
     <div className="export-bar">
+      {children}
       <button className="export-btn" onClick={onExcel} disabled={disabled}>
         <IconDownload /><span>Export Excel</span>
       </button>
       <button className="export-btn" onClick={handlePdf} disabled={disabled || exporting}>
-        <IconDownload /><span>{exporting ? "Generating PDF…" : "Export PDF"}</span>
+        <IconDownload /><span>{exporting ? "Generating PDF…" : "Export Dashboard PDF"}</span>
       </button>
+      {diagnosticsRows && (
+        <button className="export-btn" onClick={handleDiagnosticsPdf} disabled={disabled || exportingDiagnostics}>
+          <IconDownload /><span>{exportingDiagnostics ? "Gathering findings…" : "Export Diagnostics PDF"}</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -509,6 +610,8 @@ function HistoryTab({ audits }) {
         onExcel={() => downloadExcel(`history-${selectedPage.replace(/[^a-z0-9]+/gi, "-")}.xlsx`, [
           { name: "History", rows: reportRowsToSheetRows(rows, { includeDate: true }) }
         ])}
+        diagnosticsRows={rows}
+        diagnosticsFilename={`history-${selectedPage.replace(/[^a-z0-9]+/gi, "-")}-diagnostics.pdf`}
       />
       <div ref={historyRef}>
         <ReportTable rows={rows} />
@@ -856,6 +959,12 @@ export default function App() {
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("report");
   const reportRef = useRef(null);
+  // null = all pages included (default/unfiltered); otherwise a Set of URLs.
+  const [selectedPages, setSelectedPages] = useState(null);
+  const visibleRows = useMemo(
+    () => (selectedPages == null ? rows : rows.filter(r => selectedPages.has(r.url))),
+    [rows, selectedPages]
+  );
 
   function load() {
     loadDashboardRows()
@@ -896,18 +1005,22 @@ export default function App() {
             <>
               <ExportBar
                 targetRef={reportRef}
-                disabled={rows.length === 0}
+                disabled={visibleRows.length === 0}
                 pdfFilename="website-performance-report.pdf"
                 onExcel={() => downloadExcel("website-performance-report.xlsx", [
-                  { name: "Report", rows: reportRowsToSheetRows(rows) }
+                  { name: "Report", rows: reportRowsToSheetRows(visibleRows) }
                 ])}
-              />
+                diagnosticsRows={visibleRows}
+                diagnosticsFilename="website-performance-diagnostics.pdf"
+              >
+                <PageFilter rows={rows} selected={selectedPages} onChange={setSelectedPages} />
+              </ExportBar>
               <div ref={reportRef}>
-                <ReportTable rows={rows} />
+                <ReportTable rows={visibleRows} />
                 <section className="summary-grid">
-                  <OverviewPanel rows={rows} />
-                  <ScoreDistributionPanel rows={rows} />
-                  <RatingPanel rows={rows} />
+                  <OverviewPanel rows={visibleRows} />
+                  <ScoreDistributionPanel rows={visibleRows} />
+                  <RatingPanel rows={visibleRows} />
                 </section>
               </div>
             </>

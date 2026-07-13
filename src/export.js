@@ -121,10 +121,88 @@ function replaceConicGradients(root) {
   };
 }
 
-// Renders `element` to a single PDF page sized to match the captured image's
-// aspect ratio exactly — avoids the alternative (slicing a tall screenshot
-// across fixed-size pages), which cuts table rows/panels in half wherever
-// they land on a page boundary and can leave a near-empty trailing page.
+// A PDF can't literally reproduce a hover interaction, so the metric-cell
+// diagnostic findings (normally only shown on hover, see MetricCell in
+// App.jsx) are instead listed in full as plain-text pages — same content,
+// just always visible instead of gated behind a mouseover that doesn't exist
+// in a static document. Shared by the standalone diagnostics export and (if
+// ever needed again) an appendix tacked onto the dashboard screenshot.
+function writeDiagnosticsContent(pdf, sections) {
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 40;
+  const contentWidth = pageWidth - margin * 2;
+  let y = margin;
+
+  function ensureSpace(h) {
+    if (y + h > pageHeight - margin) {
+      pdf.addPage("a4", "portrait");
+      y = margin;
+    }
+  }
+  function heading(text) {
+    ensureSpace(30);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(16);
+    pdf.setTextColor(15, 35, 65);
+    pdf.text(text, margin, y);
+    y += 24;
+  }
+  function subheading(text) {
+    ensureSpace(22);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(11.5);
+    pdf.setTextColor(37, 99, 235);
+    const lines = pdf.splitTextToSize(text, contentWidth);
+    lines.forEach(line => {
+      ensureSpace(15);
+      pdf.text(line, margin, y);
+      y += 15;
+    });
+  }
+  function text(str, { size = 9.5, bold = false, indent = 0, color = [30, 30, 35] } = {}) {
+    pdf.setFont("helvetica", bold ? "bold" : "normal");
+    pdf.setFontSize(size);
+    pdf.setTextColor(...color);
+    const lines = pdf.splitTextToSize(str, contentWidth - indent);
+    lines.forEach(line => {
+      ensureSpace(size * 1.5);
+      pdf.text(line, margin + indent, y);
+      y += size * 1.4;
+    });
+  }
+
+  heading("Detailed Findings");
+  text("The real Lighthouse findings normally shown on hover for each metric cell, listed in full below.", { color: [100, 105, 115] });
+  y += 10;
+
+  sections.forEach(section => {
+    ensureSpace(36);
+    subheading(section.title);
+    y += 2;
+    if (!section.groups.length) {
+      text("No detailed findings recorded for this audit.", { indent: 10, color: [100, 105, 115] });
+      y += 10;
+      return;
+    }
+    section.groups.forEach(group => {
+      ensureSpace(18);
+      text(group.label, { bold: true, indent: 8, size: 10 });
+      group.entries.forEach(entry => {
+        const valueSuffix = entry.displayValue ? ` — ${entry.displayValue}` : "";
+        text(`•  ${entry.title}${valueSuffix}`, { indent: 16 });
+        if (entry.description) text(entry.description, { indent: 24, size: 8.5, color: [90, 95, 105] });
+      });
+      y += 6;
+    });
+    y += 8;
+  });
+}
+
+// Renders `element` to a PDF page sized to match the captured image's aspect
+// ratio exactly — avoids the alternative (slicing a tall screenshot across
+// fixed-size pages), which cuts table rows/panels in half wherever they land
+// on a page boundary and can leave a near-empty trailing page.
 export async function downloadPdf(element, filename) {
   const restoreExpand = expandForCapture(element);
   const restoreGradients = replaceConicGradients(element);
@@ -150,6 +228,14 @@ export async function downloadPdf(element, filename) {
     format: [imgWidthPt, imgHeightPt]
   });
   pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, imgWidthPt, imgHeightPt);
+  pdf.save(filename);
+}
+
+// Standalone "Detailed Diagnostics" export — just the hover-findings content,
+// no dashboard screenshot, so it makes sense even when scoped to one page.
+export function downloadDiagnosticsPdf(filename, sections) {
+  const pdf = new jsPDF({ unit: "pt", format: "a4" });
+  writeDiagnosticsContent(pdf, sections);
   pdf.save(filename);
 }
 
