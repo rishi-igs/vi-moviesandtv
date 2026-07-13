@@ -37,7 +37,6 @@ export async function GET(request: NextRequest) {
               cls: true,
               tbt: true,
               speedIndex: true,
-              tti: true,
             },
           },
         },

@@ -21,13 +21,6 @@ function getBrandForUrl(url) {
   }
 }
 
-function isBrandAllowed(url, selectedBrand) {
-  const urlBrand = getBrandForUrl(url)
-  if (!urlBrand) return false
-  if (selectedBrand === 'all' || !selectedBrand) return true
-  return urlBrand === selectedBrand
-}
-
 function isSupportedHost(url) {
   return getBrandForUrl(url) !== null
 }
@@ -40,15 +33,6 @@ function ensureEnabledDefault() {
 
 try { chrome.runtime.onStartup.addListener(ensureEnabledDefault) } catch {}
 ensureEnabledDefault()
-
-function ensureBrandDefault() {
-  chrome.storage.local.get('selectedBrand', ({ selectedBrand }) => {
-    if (selectedBrand === undefined) chrome.storage.local.set({ selectedBrand: 'all' })
-  })
-}
-
-try { chrome.runtime.onStartup.addListener(ensureBrandDefault) } catch {}
-ensureBrandDefault()
 
 async function updateBadgeForEnabled(enabled) {
   try {
@@ -187,15 +171,14 @@ async function triggerAudit(url, tabId) {
 }
 
 async function shouldAudit(url) {
-  const { enabled, selectedBrand, auditHistory = {} } = await chrome.storage.local.get([
+  const { enabled, auditHistory = {} } = await chrome.storage.local.get([
     'enabled',
-    'selectedBrand',
     'auditHistory',
   ])
 
   if (enabled === false) return false
 
-  if (!isBrandAllowed(url, selectedBrand)) return false
+  if (!isSupportedHost(url)) return false
 
   const lastRun = auditHistory[url]
   if (lastRun && Date.now() - lastRun < COOLDOWN_MS) return false
@@ -207,12 +190,6 @@ async function shouldAudit(url) {
 
 chrome.runtime.onMessage.addListener(async (message, sender) => {
   if (!message || !message.type) return
-
-  if (message.type === 'set-brand') {
-    const brand = message.brand === 'all' || message.brand === 'vi' || message.brand === 'redbull' ? message.brand : 'all'
-    await chrome.storage.local.set({ selectedBrand: brand })
-    return
-  }
 
   if (message.type === 'manual-audit' && message.url) {
     const tabId = sender?.tab?.id

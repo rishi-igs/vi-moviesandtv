@@ -331,10 +331,15 @@ function EmailModal({ visible, title = "Send Report via Email", onSend, onClose 
 // ---------------------------------------------------------------------------
 // Presentational components
 // ---------------------------------------------------------------------------
-function BrandBar() {
+function BrandBar({ brandId }) {
+  const config = BRANDS.find((b) => b.id === brandId)
   return (
     <header className="brand-bar">
-      <img className="logo-left" src="/Assets/vi-logo.png" alt="VI" />
+      {config?.logo ? (
+        <img className="logo-left" src={config.logo} alt={config.label} />
+      ) : (
+        <img className="logo-left" src="/Assets/vi-logo.png" alt="VI" />
+      )}
       <div className="brand-stripe"><span className="s1" /><span className="s2" /><span className="s3" /></div>
       <img className="logo-right" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS Engineering Quality" />
     </header>
@@ -1167,7 +1172,7 @@ const BRANDS = [
     label: "Red Bull",
     description: "Lighthouse performance audits for Red Bull website",
     color: "#dc2626",
-    logo: null,
+    logo: "/Assets/redbull-logo-png-transparent.png",
   },
 ];
 
@@ -1271,7 +1276,7 @@ export default function App() {
           {brandLabel}
         </span>
       </div>
-      <BrandBar />
+      <BrandBar brandId={page} />
       <Hero rows={rows} lastUpdated={lastUpdated} />
       <TabBar tab={tab} setTab={setTab} />
       {tab === "report" && (

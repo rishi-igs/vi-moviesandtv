@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "dev:vite": "vite",
-    "build": "next build",
+    "build:dashboard": "vite build",
+    "build": "npm run build:dashboard && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",

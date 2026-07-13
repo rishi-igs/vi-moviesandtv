@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/app/_lib/prisma'
 import { runInPool } from '@/app/_lib/audit-pool'
 import { tryStartAudit, finishAudit } from '@/app/_lib/audit-queue'
@@ -78,7 +79,12 @@ export async function runAuditForUrl(rawUrl: string): Promise<AuditOutcome> {
         accessibilityScore: result.accessibility,
         bestPracticesScore: result.bestPractices,
         seoScore: result.seo,
-        diagnostics: result.diagnostics,
+        // MetricDiagnostics is a plain, genuinely JSON-serializable object
+        // (Record<string, DiagnosticEntry[]>), but TS's structural typing
+        // doesn't recognize it as assignable to Prisma's generated
+        // InputJsonValue union without this cast — no runtime behavior
+        // change, purely satisfies the type checker.
+        diagnostics: result.diagnostics as unknown as Prisma.InputJsonValue,
         concurrentAudits: result.concurrentAudits,
         metrics: {
           create: {
