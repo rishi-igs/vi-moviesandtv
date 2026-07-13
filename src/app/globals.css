@@ -542,6 +542,47 @@ tbody tr:hover { background: #f5f7fb; }
   cursor: default;
 }
 
+/* ---------- Brand filter bar ---------- */
+.brand-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.brand-filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 4px;
+}
+.brand-filter-btn {
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-500);
+  transition: all 0.15s;
+}
+.brand-filter-btn:hover {
+  border-color: var(--blue-500);
+  color: var(--blue-500);
+}
+.brand-filter-btn.is-active {
+  border-color: var(--navy-800);
+  background: var(--navy-800);
+  color: #fff;
+}
+
 /* ---------- Bulk load bar ---------- */
 .bulk-bar {
   display: flex;

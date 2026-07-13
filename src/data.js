@@ -21,7 +21,17 @@ function pageLabelOf(url) {
   }
 }
 
-export async function loadDashboardRows() {
+function detectBrand(url) {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    if (hostname === "myvi.in" || hostname.endsWith(".myvi.in")) return "vi";
+    if (hostname === "redbull.com" || hostname.endsWith(".redbull.com")) return "redbull";
+    return null;
+  } catch { return null; }
+}
+
+export async function loadDashboardRows(opts) {
+  const brand = opts?.brand;
   const res = await fetch("/api/websites", { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to load live data (HTTP ${res.status})`);
@@ -48,18 +58,14 @@ export async function loadDashboardRows() {
         bestPractices: audit.bestPracticesScore,
         seo: audit.seoScore,
         performance: audit.performanceScore,
-        // Matches the Next.js app's behavior: there's no distinct "page load
-        // time" field anywhere in the pipeline, so Speed Index is reused here
-        // for visual consistency between the two dashboards.
         pageLoad: metric.speedIndex != null ? metric.speedIndex / 1000 : null,
         auditedAt: audit.createdAt,
-        // 1 = ran alone. 2+ = ran under CPU contention from other concurrent
-        // audits — TBT/Speed Index/performance score may be noisier than a
-        // solo run. null = predates this tracking.
-        concurrentAudits: audit.concurrentAudits ?? null
+        concurrentAudits: audit.concurrentAudits ?? null,
+        brand: detectBrand(site.url),
       };
     })
     .filter(Boolean)
+    .filter(r => !brand || brand === "all" || r.brand === brand)
     .sort((a, b) => new Date(b.auditedAt) - new Date(a.auditedAt));
 }
 
@@ -82,9 +88,9 @@ export async function loadCurrentBatch() {
   return data.batch ?? null;
 }
 
-// Full audit history across every website (not just the latest per site) —
-// powers the History and Compare tabs.
-export async function loadAllAudits() {
+// Full audit history across every website — powers the History and Compare tabs.
+export async function loadAllAudits(opts) {
+  const brand = opts?.brand;
   const res = await fetch("/api/audits", { cache: "no-store" });
   if (!res.ok) return [];
   const audits = await res.json();
@@ -110,10 +116,12 @@ export async function loadAllAudits() {
         performance: a.performanceScore,
         pageLoad: metric.speedIndex != null ? metric.speedIndex / 1000 : null,
         auditedAt: a.createdAt,
-        concurrentAudits: a.concurrentAudits ?? null
+        concurrentAudits: a.concurrentAudits ?? null,
+        brand: detectBrand(a.website.url),
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter(a => !brand || brand === "all" || a.brand === brand);
 }
 
 // Real per-audit Lighthouse findings for the hover-diagnosis tooltip, fetched

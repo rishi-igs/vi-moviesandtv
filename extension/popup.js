@@ -2,6 +2,7 @@ const toggle = document.getElementById('toggle')
 const statusText = document.getElementById('statusText')
 const listEl = document.getElementById('list')
 const lastErrorEl = document.getElementById('lastError')
+const brandOptions = document.getElementById('brandOptions')
 
 function formatTime(ts) {
   const ago = Math.round((Date.now() - ts) / 1000)
@@ -28,13 +29,25 @@ function renderAudits(audits) {
   `).join('')
 }
 
-chrome.storage.local.get(['enabled', 'recentAudits'], ({ enabled, recentAudits }) => {
+function updateBrandButtons(selectedBrand) {
+  const buttons = brandOptions.querySelectorAll('.brand-btn')
+  buttons.forEach((btn) => {
+    const brand = btn.dataset.brand
+    btn.classList.toggle('is-active', brand === selectedBrand)
+  })
+}
+
+chrome.storage.local.get(['enabled', 'recentAudits', 'selectedBrand'], ({ enabled, recentAudits, selectedBrand }) => {
   toggle.checked = enabled !== false
   statusText.textContent = enabled !== false
     ? 'Auto-audit is enabled'
     : 'Auto-audit is paused'
+
+  const brand = selectedBrand || 'all'
+  updateBrandButtons(brand)
+
   renderAudits(recentAudits)
-  // load last error
+
   chrome.storage.local.get('lastError', ({ lastError }) => {
     if (lastError && lastError.msg) {
       lastErrorEl.style.display = 'block'
@@ -54,6 +67,14 @@ toggle.addEventListener('change', () => {
     : 'Auto-audit is paused'
 })
 
+brandOptions.addEventListener('click', (event) => {
+  const btn = event.target.closest('.brand-btn')
+  if (!btn) return
+  const brand = btn.dataset.brand
+  chrome.storage.local.set({ selectedBrand: brand })
+  updateBrandButtons(brand)
+})
+
 chrome.storage.local.onChanged.addListener((changes) => {
   if (changes.recentAudits) renderAudits(changes.recentAudits.newValue)
   if (changes.enabled) {
@@ -62,6 +83,9 @@ chrome.storage.local.onChanged.addListener((changes) => {
     statusText.textContent = enabled !== false
       ? 'Auto-audit is enabled'
       : 'Auto-audit is paused'
+  }
+  if (changes.selectedBrand) {
+    updateBrandButtons(changes.selectedBrand.newValue || 'all')
   }
   if (changes.lastError) {
     const lastError = changes.lastError.newValue

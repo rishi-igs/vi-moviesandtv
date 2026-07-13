@@ -11,6 +11,7 @@ model Website {
   id        Int      @id @default(autoincrement())
   url       String   @unique
   title     String?
+  brand     String?
   createdAt DateTime @default(now()) @map("created_at")
   audits    Audit[]
 

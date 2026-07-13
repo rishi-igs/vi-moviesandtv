@@ -860,3 +860,152 @@ footer.credit {
   border-radius: 3px;
   font-size: 11px;
 }
+
+/* ---------- Brand landing page ---------- */
+.landing-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--navy-900), #0a1628);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 24px;
+}
+
+.landing-header {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.landing-brand {
+  margin-bottom: 24px;
+}
+
+.landing-logo {
+  height: 48px;
+  opacity: 0.8;
+}
+
+.landing-header h1 {
+  color: #ffffff;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin: 0 0 12px;
+}
+
+.landing-sub {
+  color: #94a3b8;
+  font-size: 16px;
+  margin: 0;
+}
+
+.brand-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+  max-width: 800px;
+  width: 100%;
+}
+
+.brand-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 36px 28px 28px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  border: 2px solid transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.brand-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+  border-color: var(--brand-color, var(--blue-500));
+}
+
+.brand-card-visual {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.brand-card-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.brand-card-initial {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--brand-color, var(--blue-500));
+}
+
+.brand-card-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-900);
+  margin: 0 0 8px;
+}
+
+.brand-card-desc {
+  font-size: 14px;
+  color: var(--text-500);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.brand-card-cta {
+  display: inline-block;
+  color: #fff;
+  padding: 10px 24px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+
+.brand-card:hover .brand-card-cta {
+  opacity: 0.9;
+}
+
+/* ---------- Brand navigation bar ---------- */
+.brand-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 6px 0;
+}
+
+.brand-nav-back {
+  background: var(--navy-800);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.brand-nav-back:hover {
+  background: var(--navy-700);
+}
+
+.brand-nav-label {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

@@ -35,6 +35,47 @@
     .switch input:checked + .slider { background: #2563eb; }
     .switch input:checked + .slider::before { transform: translateX(20px); }
     .status { color: #6b7280; font-size: 12px; margin-bottom: 8px; }
+    .brand-section {
+      margin-bottom: 12px;
+    }
+    .brand-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+    .brand-options {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .brand-btn {
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1.5px solid #d1d5db;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      color: #374151;
+    }
+    .brand-btn:hover {
+      border-color: #9ca3af;
+    }
+    .brand-btn.is-active {
+      color: #fff;
+      border-color: transparent;
+    }
+    .brand-btn.is-active.vi {
+      background: #2563eb;
+    }
+    .brand-btn.is-active.redbull {
+      background: #dc2626;
+    }
+    .brand-btn.is-active.all {
+      background: #6b7280;
+    }
     .list { max-height: 240px; overflow-y: auto; }
     .item {
       display: flex; align-items: center; gap: 8px;
@@ -69,9 +110,17 @@
 
   <div class="status" id="statusText">Waiting for page visits...</div>
 
-  <p style="font-size:12px;color:#6b7280;margin-bottom:8px;">
-    Browse any page on myvi.in and the extension will audit it automatically. Other sites are ignored.
-  </p>
+  <div class="brand-section">
+    <div class="brand-label">Brand filter</div>
+    <div class="brand-options" id="brandOptions">
+      <button class="brand-btn all" data-brand="all">All</button>
+      <button class="brand-btn vi" data-brand="vi">VI</button>
+      <button class="brand-btn redbull" data-brand="redbull">Red Bull</button>
+    </div>
+    <p style="font-size:11px;color:#6b7280;margin-top:6px;">
+      Only pages matching the selected brand will be audited.
+    </p>
+  </div>
 
   <div id="lastError" style="font-size:12px;color:#b91c1c;margin-bottom:12px;display:none;padding:8px;background:#fff1f2;border:1px solid #fecaca;border-radius:6px;"></div>
 
@@ -80,7 +129,7 @@
   </div>
 
   <div class="footer">
-    <a href="http://localhost:3000" target="_blank">Open Dashboard &rarr;</a>
+    <a href="http://localhost:5173" target="_blank">Open Dashboard &rarr;</a>
   </div>
 
   <script src="popup.js"></script>

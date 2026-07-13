@@ -1,24 +1,37 @@
 const API_BASES = ['http://localhost:3002', 'http://127.0.0.1:3002', 'http://localhost:3001', 'http://localhost:3000']
 const API_PATHS = ['/api/audit', '/api/audit-legacy']
-const COOLDOWN_MS = 5 * 60 * 1000 // 5 min between same URL
+const COOLDOWN_MS = 5 * 60 * 1000
 
-// Only audit the VI site and its subdomains — host_permissions/content_scripts
-// restrict where content scripts run, but NOT what webNavigation events the
-// background worker sees, so this check is the real gate against auditing
-// whatever else the tester happens to be browsing.
-const TARGET_HOST_SUFFIX = 'myvi.in'
+const BRAND_CONFIGS = [
+  { brand: 'vi', hostSuffix: 'myvi.in', label: 'VI Movies & TV' },
+  { brand: 'redbull', hostSuffix: 'redbull.com', label: 'Red Bull' },
+]
 
-function isTargetHost(url) {
+function getBrandForUrl(url) {
   try {
-    const hostname = new URL(url).hostname
-    return hostname === TARGET_HOST_SUFFIX || hostname.endsWith(`.${TARGET_HOST_SUFFIX}`)
+    const hostname = new URL(url).hostname.toLowerCase()
+    for (const config of BRAND_CONFIGS) {
+      if (hostname === config.hostSuffix || hostname.endsWith(`.${config.hostSuffix}`)) {
+        return config.brand
+      }
+    }
+    return null
   } catch (e) {
-    return false
+    return null
   }
 }
 
+function isBrandAllowed(url, selectedBrand) {
+  const urlBrand = getBrandForUrl(url)
+  if (!urlBrand) return false
+  if (selectedBrand === 'all' || !selectedBrand) return true
+  return urlBrand === selectedBrand
+}
 
-// Ensure the auditing toggle defaults to ON for new installs
+function isSupportedHost(url) {
+  return getBrandForUrl(url) !== null
+}
+
 function ensureEnabledDefault() {
   chrome.storage.local.get('enabled', ({ enabled }) => {
     if (enabled === undefined) chrome.storage.local.set({ enabled: true })
@@ -28,7 +41,15 @@ function ensureEnabledDefault() {
 try { chrome.runtime.onStartup.addListener(ensureEnabledDefault) } catch {}
 ensureEnabledDefault()
 
-// Update badge based on enabled state
+function ensureBrandDefault() {
+  chrome.storage.local.get('selectedBrand', ({ selectedBrand }) => {
+    if (selectedBrand === undefined) chrome.storage.local.set({ selectedBrand: 'all' })
+  })
+}
+
+try { chrome.runtime.onStartup.addListener(ensureBrandDefault) } catch {}
+ensureBrandDefault()
+
 async function updateBadgeForEnabled(enabled) {
   try {
     if (enabled) {
@@ -37,15 +58,13 @@ async function updateBadgeForEnabled(enabled) {
     } else {
       await chrome.action.setBadgeText({ text: '' })
     }
-  } catch (e) {
-    // ignore in older browsers
-  }
+  } catch (e) {}
 }
 
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.enabled) updateBadgeForEnabled(changes.enabled.newValue !== false)
 })
-// initialize badge
+
 chrome.storage.local.get('enabled', ({ enabled }) => updateBadgeForEnabled(enabled !== false))
 
 async function postAuditRequest(url) {
@@ -58,11 +77,6 @@ async function postAuditRequest(url) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url }),
-          // The API call is synchronous — it waits for the full Lighthouse
-          // run to finish before responding (15-25s+ typical, longer if
-          // AUDIT_POOL_SIZE serializes this behind other in-flight audits).
-          // 8s was way too short and aborted every real audit before the
-          // server could finish, surfacing as a false "network error".
           signal: AbortSignal.timeout(60000),
         })
 
@@ -100,7 +114,6 @@ async function triggerAudit(url, tabId) {
   try {
     const { base, res, data, text } = await postAuditRequest(url)
 
-    // If request succeeded but returned non-JSON, we still have body text
     if (res.ok) {
       if (data) {
         console.log(`[Lighthouse] Audit queued for ${url} via ${base}`, data)
@@ -113,10 +126,8 @@ async function triggerAudit(url, tabId) {
         chrome.action.setBadgeText({ text: '✓', tabId })
         chrome.action.setBadgeBackgroundColor({ color: '#16a34a', tabId })
       } else {
-        // Successful status but non-JSON body — record as an error
         const snippet = text.slice(0, 200)
         console.warn(`[Lighthouse] Unexpected non-JSON success response for ${url} via ${base}`, snippet)
-        // surface notification and save last error for popup
         try {
           chrome.notifications.create({
             type: 'basic',
@@ -176,14 +187,15 @@ async function triggerAudit(url, tabId) {
 }
 
 async function shouldAudit(url) {
-  const { enabled, auditHistory = {} } = await chrome.storage.local.get([
+  const { enabled, selectedBrand, auditHistory = {} } = await chrome.storage.local.get([
     'enabled',
+    'selectedBrand',
     'auditHistory',
   ])
 
   if (enabled === false) return false
 
-  if (!isTargetHost(url)) return false
+  if (!isBrandAllowed(url, selectedBrand)) return false
 
   const lastRun = auditHistory[url]
   if (lastRun && Date.now() - lastRun < COOLDOWN_MS) return false
@@ -193,14 +205,19 @@ async function shouldAudit(url) {
   return true
 }
 
-// Handle manual audits (bypass cooldown optionally)
 chrome.runtime.onMessage.addListener(async (message, sender) => {
   if (!message || !message.type) return
+
+  if (message.type === 'set-brand') {
+    const brand = message.brand === 'all' || message.brand === 'vi' || message.brand === 'redbull' ? message.brand : 'all'
+    await chrome.storage.local.set({ selectedBrand: brand })
+    return
+  }
+
   if (message.type === 'manual-audit' && message.url) {
     const tabId = sender?.tab?.id
-    if (!isTargetHost(message.url)) return
+    if (!isSupportedHost(message.url)) return
     if (message.bypassCooldown) {
-      // update auditHistory to allow immediate run
       const { auditHistory = {} } = await chrome.storage.local.get('auditHistory')
       delete auditHistory[message.url]
       await chrome.storage.local.set({ auditHistory })
@@ -209,6 +226,10 @@ chrome.runtime.onMessage.addListener(async (message, sender) => {
     }
     if (await shouldAudit(message.url)) triggerAudit(message.url, tabId)
     return
+  }
+
+  if (message.type === 'get-brands') {
+    return Promise.resolve({ brands: BRAND_CONFIGS })
   }
 })
 
@@ -247,7 +268,6 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(onNavigationCompleted)
 chrome.webNavigation.onCommitted.addListener(onNavigationCommitted)
 chrome.webNavigation.onReferenceFragmentUpdated.addListener(onNavigationCompleted)
 
-// Listen for SPA navigation messages from content scripts
 chrome.runtime.onMessage.addListener(async (message, sender) => {
   if (!message || message.type !== 'spa-navigate' || !message.url) return
   const tabId = sender?.tab?.id

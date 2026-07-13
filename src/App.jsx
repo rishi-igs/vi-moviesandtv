@@ -1154,7 +1154,72 @@ function AIAssistantPanel({ rows }) {
   );
 }
 
+const BRANDS = [
+  {
+    id: "vi",
+    label: "VI Movies & TV",
+    description: "Lighthouse performance audits for VI movies & TV platform",
+    color: "#2563eb",
+    logo: "/Assets/vi-logo.png",
+  },
+  {
+    id: "redbull",
+    label: "Red Bull",
+    description: "Lighthouse performance audits for Red Bull website",
+    color: "#dc2626",
+    logo: null,
+  },
+];
+
+function BrandCard({ brand, onClick }) {
+  return (
+    <div className="brand-card" onClick={() => onClick(brand.id)} style={{ "--brand-color": brand.color }}>
+      <div className="brand-card-visual">
+        {brand.logo ? (
+          <img className="brand-card-logo" src={brand.logo} alt={brand.label} />
+        ) : (
+          <div className="brand-card-initial">{brand.label.charAt(0)}</div>
+        )}
+      </div>
+      <h2 className="brand-card-title">{brand.label}</h2>
+      <p className="brand-card-desc">{brand.description}</p>
+      <span className="brand-card-cta" style={{ background: brand.color }}>Open Dashboard →</span>
+    </div>
+  );
+}
+
+function BrandLanding({ onSelect }) {
+  return (
+    <div className="landing-page">
+      <header className="landing-header">
+        <div className="landing-brand">
+          <img className="landing-logo" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS" />
+        </div>
+        <h1>Lighthouse Performance Tracker</h1>
+        <p className="landing-sub">Select a brand to view its Lighthouse audit dashboard</p>
+      </header>
+      <div className="brand-grid">
+        {BRANDS.map(b => (
+          <BrandCard key={b.id} brand={b} onClick={onSelect} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function handleBrandSelect(brand) {
+  try { localStorage.setItem("lighthouse-brand-filter", brand); } catch {}
+  return brand
+}
+
 export default function App() {
+  const [page, setPage] = useState(() => {
+    try {
+      const saved = localStorage.getItem("lighthouse-brand-filter");
+      if (saved === "vi" || saved === "redbull") return saved;
+    } catch {}
+    return "home";
+  });
   const [rows, setRows] = useState([]);
   const [allAudits, setAllAudits] = useState([]);
   const [inFlight, setInFlight] = useState([]);
@@ -1169,32 +1234,43 @@ export default function App() {
     [rows, selectedPages]
   );
 
+  const brand = page === "home" ? "all" : page;
+  const brandLabel = BRANDS.find(b => b.id === page)?.label ?? null;
+
   function load() {
-    loadDashboardRows()
+    loadDashboardRows({ brand })
       .then(data => {
         setRows(data);
         setLastUpdated(new Date().toLocaleString());
         setError(null);
       })
       .catch(e => setError(e.message));
-    // Server-truth in-flight status — independent of any tab's local state,
-    // so it still shows correctly after a refresh.
     loadInFlightAudits().then(setInFlight);
-    // Full history, used by the History and Compare tabs.
-    loadAllAudits().then(setAllAudits);
+    loadAllAudits({ brand }).then(setAllAudits);
   }
 
   useEffect(() => {
-    load();
-    // Poll in the background so newly-completed audits (e.g. from the Chrome
-    // extension or the Next.js app's manual "Run Audit") show up without a
-    // manual refresh.
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    if (page !== "home") {
+      load();
+      const interval = setInterval(load, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [page]);
+
+  if (page === "home") {
+    return <BrandLanding onSelect={(brand) => { handleBrandSelect(brand); setPage(brand); }} />;
+  }
 
   return (
     <div className="page">
+      <div className="brand-nav">
+        <button className="brand-nav-back" onClick={() => { handleBrandSelect("all"); setPage("home"); }}>
+          ← All Brands
+        </button>
+        <span className="brand-nav-label" style={{ color: BRANDS.find(b => b.id === page)?.color }}>
+          {brandLabel}
+        </span>
+      </div>
       <BrandBar />
       <Hero rows={rows} lastUpdated={lastUpdated} />
       <TabBar tab={tab} setTab={setTab} />
@@ -1209,8 +1285,8 @@ export default function App() {
               <ExportBar
                 targetRef={reportRef}
                 disabled={visibleRows.length === 0}
-                pdfFilename="website-performance-report.pdf"
-                onExcel={() => downloadExcel("website-performance-report.xlsx", [
+                pdfFilename={`${page}-performance-report.pdf`}
+                onExcel={() => downloadExcel(`${page}-performance-report.xlsx`, [
                   { name: "Report", rows: reportRowsToSheetRows(visibleRows) }
                 ])}
                 diagnosticsRows={visibleRows}
