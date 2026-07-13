@@ -239,16 +239,29 @@ export function downloadDiagnosticsPdf(filename, sections) {
   pdf.save(filename);
 }
 
+// Same content as downloadDiagnosticsPdf, but returns a data URI instead of
+// triggering a download — used to attach the diagnostics PDF to an outgoing
+// email (see handleSendDiagnosticsEmail in App.jsx).
+export function generateDiagnosticsPdfData(sections) {
+  const pdf = new jsPDF({ unit: "pt", format: "a4" });
+  writeDiagnosticsContent(pdf, sections);
+  return pdf.output("datauristring");
+}
+
 // Same rasterization as downloadPdf, but returns the PDF as a data URI
 // instead of triggering a download — used to attach the dashboard PDF to an
-// outgoing email (see handleSendEmail in App.jsx).
+// outgoing email (see handleSendEmail in App.jsx). Downscaled and JPEG-
+// encoded (vs downloadPdf's PNG at 2x) specifically because email providers
+// enforce attachment size limits (e.g. Brevo rejects anything over 20MB) —
+// a full-resolution PNG screenshot of a large table blows past that easily,
+// where local downloads have no such ceiling.
 export async function generatePdfData(element) {
   const restoreExpand = expandForCapture(element);
   const restoreGradients = replaceConicGradients(element);
   let canvas;
   try {
     canvas = await html2canvas(element, {
-      scale: 2,
+      scale: 1.25,
       backgroundColor: "#ffffff",
       useCORS: true
     });
@@ -257,14 +270,14 @@ export async function generatePdfData(element) {
     restoreExpand();
   }
 
-  const imgWidthPt = canvas.width / 2;
-  const imgHeightPt = canvas.height / 2;
+  const imgWidthPt = canvas.width / 1.25;
+  const imgHeightPt = canvas.height / 1.25;
   const pdf = new jsPDF({
     orientation: imgWidthPt >= imgHeightPt ? "landscape" : "portrait",
     unit: "pt",
     format: [imgWidthPt, imgHeightPt]
   });
-  pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, imgWidthPt, imgHeightPt);
+  pdf.addImage(canvas.toDataURL("image/jpeg", 0.8), "JPEG", 0, 0, imgWidthPt, imgHeightPt);
   return pdf.output("datauristring");
 }
 

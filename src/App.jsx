@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { loadDashboardRows, loadInFlightAudits, loadCurrentBatch, startBulkAudit, loadAllAudits, loadAuditDiagnostics } from "./data.js";
-import { downloadExcel, downloadPdf, downloadDiagnosticsPdf, generatePdfData, reportRowsToSheetRows, compareColumnsToSheetRows } from "./export.js";
+import { downloadExcel, downloadPdf, downloadDiagnosticsPdf, generatePdfData, generateDiagnosticsPdfData, reportRowsToSheetRows, compareColumnsToSheetRows } from "./export.js";
 import * as XLSX from "xlsx";
 
 // ---------------------------------------------------------------------------
@@ -144,6 +144,7 @@ function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows,
   const [exporting, setExporting] = useState(false);
   const [exportingDiagnostics, setExportingDiagnostics] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
+  const [showDiagnosticsEmail, setShowDiagnosticsEmail] = useState(false);
 
   async function handlePdf() {
     if (!targetRef.current || exporting) return;
@@ -193,6 +194,34 @@ function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows,
     return data;
   }
 
+  async function handleSendDiagnosticsEmail(email) {
+    if (!diagnosticsRows || !diagnosticsRows.length) return;
+    const diagnosticsList = await Promise.all(diagnosticsRows.map(r => loadAuditDiagnostics(r.auditId)));
+    const sections = diagnosticsRows.map((r, i) => ({
+      title: `${r.page} — ${r.url}`,
+      groups: METRIC_DEFS
+        .map(def => ({ label: def.label, entries: diagnosticsList[i]?.[def.key] ?? [] }))
+        .filter(g => g.entries.length)
+    }));
+    const dataUrl = generateDiagnosticsPdfData(sections);
+    const base64 = dataUrl.split(",")[1];
+    const res = await fetch("/api/send-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: email,
+        subject: `Detailed Diagnostics — ${document.title || diagnosticsFilename}`,
+        body: `Please find the attached detailed diagnostics report (${diagnosticsFilename}).`,
+        attachment: { data: base64, filename: diagnosticsFilename },
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to send email");
+    }
+    return data;
+  }
+
   return (
     <div className="export-bar">
       {children}
@@ -208,9 +237,15 @@ function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows,
         </button>
       )}
       <button className="export-btn" onClick={() => setShowEmail(true)} disabled={disabled || exporting}>
-        <IconMail /><span>Send Email</span>
+        <IconMail /><span>Email Dashboard</span>
       </button>
-      <EmailModal visible={showEmail} exporting={exporting} onSend={handleSendEmail} onClose={() => setShowEmail(false)} />
+      {diagnosticsRows && (
+        <button className="export-btn" onClick={() => setShowDiagnosticsEmail(true)} disabled={disabled}>
+          <IconMail /><span>Email Diagnostics</span>
+        </button>
+      )}
+      <EmailModal visible={showEmail} title="Send Dashboard Report via Email" onSend={handleSendEmail} onClose={() => setShowEmail(false)} />
+      <EmailModal visible={showDiagnosticsEmail} title="Send Diagnostics Report via Email" onSend={handleSendDiagnosticsEmail} onClose={() => setShowDiagnosticsEmail(false)} />
     </div>
   );
 }
@@ -218,7 +253,7 @@ function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows,
 // ---------------------------------------------------------------------------
 // Email Modal — overlaid when the user clicks "Send Email"
 // ---------------------------------------------------------------------------
-function EmailModal({ visible, exporting, onSend, onClose }) {
+function EmailModal({ visible, title = "Send Report via Email", onSend, onClose }) {
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
@@ -264,7 +299,7 @@ function EmailModal({ visible, exporting, onSend, onClose }) {
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <h3>Send Report via Email</h3>
+            <h3>{title}</h3>
             <p className="modal-hint">The PDF report will be attached to the email.</p>
             <input
               className="modal-input"
