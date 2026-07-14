@@ -1,0 +1,9 @@
+node_modules/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+.env
+DB Data/
+dist/
+public/emails/
+public/app/
