@@ -170,6 +170,23 @@ async function triggerAudit(url, tabId) {
   }
 }
 
+async function getActiveBrand() {
+  for (const base of API_BASES) {
+    try {
+      const res = await fetch(`${base}/api/active-brand`, {
+        signal: AbortSignal.timeout(5000),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        return data.brand ?? null
+      }
+    } catch (err) {
+      // try next base
+    }
+  }
+  return null
+}
+
 async function shouldAudit(url) {
   const { enabled, auditHistory = {} } = await chrome.storage.local.get([
     'enabled',
@@ -179,6 +196,11 @@ async function shouldAudit(url) {
   if (enabled === false) return false
 
   if (!isSupportedHost(url)) return false
+
+  // Check if a specific brand is active in the dashboard — if so, only
+  // auto-audit URLs matching that brand.
+  const activeBrand = await getActiveBrand()
+  if (activeBrand && getBrandForUrl(url) !== activeBrand) return false
 
   const lastRun = auditHistory[url]
   if (lastRun && Date.now() - lastRun < COOLDOWN_MS) return false

@@ -1245,6 +1245,14 @@ export default function App() {
   const brandLabel = BRANDS.find(b => b.id === page)?.label ?? null;
 
   useEffect(() => {
+    // Tell the extension which brand is active so it only auto-audits
+    // URLs matching that brand.
+    fetch("/api/active-brand", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brand: page === "home" ? "all" : page })
+    }).catch(() => {});
+
     if (page === "home") return;
 
     // Clear immediately so the previous brand's data doesn't flash on screen
