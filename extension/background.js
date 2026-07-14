@@ -25,6 +25,20 @@ function isSupportedHost(url) {
   return getBrandForUrl(url) !== null
 }
 
+// Per-install setting (chrome.storage.local — local to this browser/machine,
+// never synced from the dashboard). This is deliberately NOT tied to
+// whichever brand page happens to be open in the dashboard tab: that
+// coupling was the earlier bug, where switching brands on the dashboard
+// silently changed what got auto-audited. This is a one-time, explicit
+// choice made in the popup so a VI install never auto-audits Red Bull (and
+// vice versa) even if someone accidentally browses there.
+function isBrandAllowed(url, selectedBrand) {
+  const urlBrand = getBrandForUrl(url)
+  if (!urlBrand) return false
+  if (!selectedBrand || selectedBrand === 'all') return true
+  return urlBrand === selectedBrand
+}
+
 function ensureEnabledDefault() {
   chrome.storage.local.get('enabled', ({ enabled }) => {
     if (enabled === undefined) chrome.storage.local.set({ enabled: true })
@@ -33,6 +47,15 @@ function ensureEnabledDefault() {
 
 try { chrome.runtime.onStartup.addListener(ensureEnabledDefault) } catch {}
 ensureEnabledDefault()
+
+function ensureBrandDefault() {
+  chrome.storage.local.get('selectedBrand', ({ selectedBrand }) => {
+    if (selectedBrand === undefined) chrome.storage.local.set({ selectedBrand: 'all' })
+  })
+}
+
+try { chrome.runtime.onStartup.addListener(ensureBrandDefault) } catch {}
+ensureBrandDefault()
 
 async function updateBadgeForEnabled(enabled) {
   try {
@@ -171,14 +194,15 @@ async function triggerAudit(url, tabId) {
 }
 
 async function shouldAudit(url) {
-  const { enabled, auditHistory = {} } = await chrome.storage.local.get([
+  const { enabled, selectedBrand, auditHistory = {} } = await chrome.storage.local.get([
     'enabled',
+    'selectedBrand',
     'auditHistory',
   ])
 
   if (enabled === false) return false
 
-  if (!isSupportedHost(url)) return false
+  if (!isBrandAllowed(url, selectedBrand)) return false
 
   const lastRun = auditHistory[url]
   if (lastRun && Date.now() - lastRun < COOLDOWN_MS) return false
