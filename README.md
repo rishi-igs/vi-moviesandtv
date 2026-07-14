@@ -1,4 +1,4 @@
-# Lighthouse Performance Tracking Dashboard
+# Lighthouse Performance Tracking Dashboard (IGS Beacon)
 
 A full-stack web application that runs Google Lighthouse audits on any URL, stores the results in a database, and displays a dashboard with historical trends and performance metrics.
 
