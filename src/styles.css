@@ -978,6 +978,114 @@ footer.credit {
   opacity: 0.9;
 }
 
+/* ---------- Login page ---------- */
+.login-container {
+  width: 100%;
+  max-width: 440px;
+}
+
+.login-form {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 40px 32px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.login-brand-select {
+  margin-bottom: 24px;
+}
+
+.login-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-700, #475569);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.login-brand-options {
+  display: flex;
+  gap: 8px;
+}
+
+.login-brand-option {
+  flex: 1;
+  padding: 10px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.login-brand-option.is-active {
+  background: #f0f4ff;
+  border-color: var(--brand-color, #2563eb);
+  color: var(--brand-color, #2563eb);
+}
+
+.login-brand-option:hover:not(.is-active) {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.login-field {
+  margin-bottom: 20px;
+}
+
+.login-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 15px;
+  color: var(--text-900, #0f172a);
+  background: #f8fafc;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.login-input:focus {
+  border-color: var(--brand-color, #2563eb);
+  background: #ffffff;
+}
+
+.login-input::placeholder {
+  color: #94a3b8;
+}
+
+.login-error {
+  color: #dc2626;
+  font-size: 13px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: #fef2f2;
+  border-radius: 8px;
+}
+
+.login-submit {
+  width: 100%;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.login-submit:hover {
+  opacity: 0.9;
+}
+
 /* ---------- Brand navigation bar ---------- */
 .brand-nav {
   display: flex;

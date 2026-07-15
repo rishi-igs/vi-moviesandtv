@@ -1178,24 +1178,23 @@ const BRANDS = [
   },
 ];
 
-function BrandCard({ brand, onClick }) {
-  return (
-    <div className="brand-card" onClick={() => onClick(brand.id)} style={{ "--brand-color": brand.color }}>
-      <div className="brand-card-visual">
-        {brand.logo ? (
-          <img className="brand-card-logo" src={brand.logo} alt={brand.label} />
-        ) : (
-          <div className="brand-card-initial">{brand.label.charAt(0)}</div>
-        )}
-      </div>
-      <h2 className="brand-card-title">{brand.label}</h2>
-      <p className="brand-card-desc">{brand.description}</p>
-      <span className="brand-card-cta" style={{ background: brand.color }}>Open Dashboard →</span>
-    </div>
-  );
-}
+function LoginPage({ onLogin, error: loginError }) {
+  const [selectedBrand, setSelectedBrand] = useState("vi");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
 
-function BrandLanding({ onSelect }) {
+  function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    const creds = LOGIN_CREDENTIALS[selectedBrand];
+    if (username === creds.username && password === creds.password) {
+      onLogin(selectedBrand, username);
+    } else {
+      setError("Invalid username or password. Please try again.");
+    }
+  }
+
   return (
     <div className="landing-page">
       <header className="landing-header">
@@ -1203,30 +1202,69 @@ function BrandLanding({ onSelect }) {
           <img className="landing-logo" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS" />
         </div>
         <h1>IGS BEACON</h1>
-        <p className="landing-sub">Select a brand to view its Lighthouse audit dashboard</p>
+        <p className="landing-sub">Sign in to view your Lighthouse audit dashboard</p>
       </header>
-      <div className="brand-grid">
-        {BRANDS.map(b => (
-          <BrandCard key={b.id} brand={b} onClick={onSelect} />
-        ))}
+      <div className="login-container">
+        <form className="login-form" onSubmit={handleSubmit}>
+          <div className="login-brand-select">
+            <label className="login-label">Select Dashboard</label>
+            <div className="login-brand-options">
+              {BRANDS.map(b => (
+                <button
+                  key={b.id}
+                  type="button"
+                  className={`login-brand-option ${selectedBrand === b.id ? "is-active" : ""}`}
+                  style={selectedBrand === b.id ? { borderColor: b.color, color: b.color } : {}}
+                  onClick={() => { setSelectedBrand(b.id); setError(""); }}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="login-field">
+            <label className="login-label" htmlFor="login-username">Username</label>
+            <input
+              id="login-username"
+              className="login-input"
+              type="text"
+              placeholder="Enter username"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              autoFocus
+              required
+            />
+          </div>
+          <div className="login-field">
+            <label className="login-label" htmlFor="login-password">Password</label>
+            <input
+              id="login-password"
+              className="login-input"
+              type="password"
+              placeholder="Enter password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+            />
+          </div>
+          {error && <div className="login-error">{error}</div>}
+          <button type="submit" className="login-submit" style={{ background: BRANDS.find(b => b.id === selectedBrand)?.color }}>
+            Sign In to {BRANDS.find(b => b.id === selectedBrand)?.label}
+          </button>
+        </form>
       </div>
     </div>
   );
 }
 
-function handleBrandSelect(brand) {
-  try { localStorage.setItem("lighthouse-brand-filter", brand); } catch {}
-  return brand
-}
+const LOGIN_CREDENTIALS = {
+  vi: { username: "vi", password: "vi@2024", label: "VI Movies & TV" },
+  redbull: { username: "redbull", password: "rb@2024", label: "Red Bull" },
+};
 
 export default function App() {
-  const [page, setPage] = useState(() => {
-    try {
-      const saved = localStorage.getItem("lighthouse-brand-filter");
-      if (saved === "vi" || saved === "redbull") return saved;
-    } catch {}
-    return "home";
-  });
+  const [page, setPage] = useState("login");
+  const [loggedInUser, setLoggedInUser] = useState(null);
   const [rows, setRows] = useState([]);
   const [allAudits, setAllAudits] = useState([]);
   const [inFlight, setInFlight] = useState([]);
@@ -1241,7 +1279,7 @@ export default function App() {
     [rows, selectedPages]
   );
 
-  const brand = page === "home" ? "all" : page;
+  const brand = page === "login" ? "all" : page;
   const brandLabel = BRANDS.find(b => b.id === page)?.label ?? null;
 
   useEffect(() => {
@@ -1250,10 +1288,10 @@ export default function App() {
     fetch("/api/active-brand", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brand: page === "home" ? "all" : page })
+      body: JSON.stringify({ brand: page === "login" ? "all" : page })
     }).catch(() => {});
 
-    if (page === "home") return;
+    if (page === "login") return;
 
     // Clear immediately so the previous brand's data doesn't flash on screen
     // while the new brand's fetch is still in flight.
@@ -1284,15 +1322,15 @@ export default function App() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [page]);
 
-  if (page === "home") {
-    return <BrandLanding onSelect={(brand) => { handleBrandSelect(brand); setPage(brand); }} />;
+  if (page === "login") {
+    return <LoginPage onLogin={(brand, user) => { setLoggedInUser(user); setPage(brand); }} />;
   }
 
   return (
     <div className="page">
       <div className="brand-nav">
-        <button className="brand-nav-back" onClick={() => { handleBrandSelect("all"); setPage("home"); }}>
-          ← All Brands
+        <button className="brand-nav-back" onClick={() => { setLoggedInUser(null); setPage("login"); }}>
+          ← Logout
         </button>
         <span className="brand-nav-label" style={{ color: BRANDS.find(b => b.id === page)?.color }}>
           {brandLabel}
