@@ -95,6 +95,26 @@
     }
     .footer a:hover { text-decoration: underline; }
     .empty { color: #9ca3af; font-size: 12px; text-align: center; padding: 16px 0; }
+    .server-section { margin-bottom: 12px; }
+    .server-row { display: flex; gap: 6px; }
+    .server-input {
+      flex: 1;
+      padding: 6px 8px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .server-save {
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .server-saved { color: #16a34a; font-size: 11px; margin-top: 4px; display: none; }
   </style>
 </head>
 <body>
@@ -109,6 +129,19 @@
   </div>
 
   <div class="status" id="statusText">Waiting for page visits...</div>
+
+  <div class="server-section">
+    <div class="brand-label">Dashboard server URL</div>
+    <div class="server-row">
+      <input type="text" class="server-input" id="serverInput" placeholder="http://49.249.95.65:3030" />
+      <button class="server-save" id="serverSave">Save</button>
+    </div>
+    <p style="font-size:11px;color:#6b7280;margin-top:6px;">
+      Where this install sends audit requests. Leave blank only if the
+      dashboard runs on this same machine (localhost).
+    </p>
+    <div class="server-saved" id="serverSaved">Saved</div>
+  </div>
 
   <div class="brand-section">
     <div class="brand-label">Auto-audit which sites?</div>
@@ -131,7 +164,7 @@
   </div>
 
   <div class="footer">
-    <a href="http://localhost:5173" target="_blank">Open Dashboard &rarr;</a>
+    <a href="http://localhost:3000" target="_blank" id="dashboardLink">Open Dashboard &rarr;</a>
   </div>
 
   <script src="popup.js"></script>

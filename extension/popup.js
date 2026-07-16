@@ -3,6 +3,10 @@ const statusText = document.getElementById('statusText')
 const listEl = document.getElementById('list')
 const lastErrorEl = document.getElementById('lastError')
 const brandOptions = document.getElementById('brandOptions')
+const serverInput = document.getElementById('serverInput')
+const serverSave = document.getElementById('serverSave')
+const serverSaved = document.getElementById('serverSaved')
+const dashboardLink = document.getElementById('dashboardLink')
 
 function formatTime(ts) {
   const ago = Math.round((Date.now() - ts) / 1000)
@@ -37,13 +41,20 @@ function updateBrandButtons(selectedBrand) {
   })
 }
 
-chrome.storage.local.get(['enabled', 'recentAudits', 'selectedBrand'], ({ enabled, recentAudits, selectedBrand }) => {
+function applyDashboardLink(apiBaseUrl) {
+  dashboardLink.href = apiBaseUrl || 'http://localhost:3000'
+}
+
+chrome.storage.local.get(['enabled', 'recentAudits', 'selectedBrand', 'apiBaseUrl'], ({ enabled, recentAudits, selectedBrand, apiBaseUrl }) => {
   toggle.checked = enabled !== false
   statusText.textContent = enabled !== false
     ? 'Auto-audit is enabled'
     : 'Auto-audit is paused'
 
   updateBrandButtons(selectedBrand || 'all')
+
+  serverInput.value = apiBaseUrl || ''
+  applyDashboardLink(apiBaseUrl)
 
   renderAudits(recentAudits)
 
@@ -72,6 +83,20 @@ brandOptions.addEventListener('click', (event) => {
   const brand = btn.dataset.brand
   chrome.storage.local.set({ selectedBrand: brand })
   updateBrandButtons(brand)
+})
+
+serverSave.addEventListener('click', () => {
+  const raw = serverInput.value.trim().replace(/\/$/, '')
+  const done = () => {
+    applyDashboardLink(raw)
+    serverSaved.style.display = 'block'
+    setTimeout(() => { serverSaved.style.display = 'none' }, 1500)
+  }
+  if (raw) {
+    chrome.storage.local.set({ apiBaseUrl: raw }, done)
+  } else {
+    chrome.storage.local.remove('apiBaseUrl', done)
+  }
 })
 
 chrome.storage.local.onChanged.addListener((changes) => {

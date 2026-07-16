@@ -1,6 +1,16 @@
-const API_BASES = ['http://localhost:3002', 'http://127.0.0.1:3002', 'http://localhost:3001', 'http://localhost:3000']
+// Local dev fallbacks — tried only when no server URL is configured in the
+// popup. A real deployment (e.g. the VM) should set apiBaseUrl instead, since
+// this install's browser has no reason to have anything running on its own
+// localhost.
+const DEFAULT_API_BASES = ['http://localhost:3002', 'http://127.0.0.1:3002', 'http://localhost:3001', 'http://localhost:3000']
 const API_PATHS = ['/api/audit', '/api/audit-legacy']
 const COOLDOWN_MS = 5 * 60 * 1000
+
+async function getApiBases() {
+  const { apiBaseUrl } = await chrome.storage.local.get('apiBaseUrl')
+  if (apiBaseUrl) return [apiBaseUrl.replace(/\/$/, '')]
+  return DEFAULT_API_BASES
+}
 
 const BRAND_CONFIGS = [
   { brand: 'vi', hostSuffix: 'myvi.in', label: 'VI Movies & TV' },
@@ -76,8 +86,9 @@ chrome.storage.local.get('enabled', ({ enabled }) => updateBadgeForEnabled(enabl
 
 async function postAuditRequest(url) {
   let lastError = null
+  const apiBases = await getApiBases()
 
-  for (const base of API_BASES) {
+  for (const base of apiBases) {
     for (const path of API_PATHS) {
       try {
         const res = await fetch(`${base}${path}`, {
