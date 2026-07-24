@@ -2,17 +2,8 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/app/_lib/prisma'
 import { runInPool } from '@/app/_lib/audit-pool'
 import { tryStartAudit, finishAudit } from '@/app/_lib/audit-queue'
-import { BRAND_CONFIGS, detectBrand } from '@/app/_lib/brand'
 
 const COOLDOWN_MS = 5 * 60 * 1000
-
-function isTargetHost(hostname: string): boolean {
-  return BRAND_CONFIGS.some(
-    (config) => hostname === config.hostSuffix || hostname.endsWith(`.${config.hostSuffix}`),
-  )
-}
-
-const KNOWN_BRANDS = BRAND_CONFIGS.map((c) => c.hostSuffix).join(', ')
 
 export type AuditOutcome =
   | { status: 'error'; error: string; httpStatus: number }
@@ -33,20 +24,11 @@ export async function runAuditForUrl(rawUrl: string): Promise<AuditOutcome> {
     }
   }
 
-  if (!isTargetHost(auditUrl.hostname)) {
-    return {
-      status: 'error',
-      error: `Only supported brand URLs (${KNOWN_BRANDS}) can be audited by this tool`,
-      httpStatus: 403,
-    }
-  }
-
-  const brand = detectBrand(auditUrl.toString())
   const normalizedUrl = auditUrl.toString()
   let website = await prisma.website.findUnique({ where: { url: normalizedUrl } })
   if (!website) {
     try {
-      website = await prisma.website.create({ data: { url: normalizedUrl, title: normalizedUrl, brand } })
+      website = await prisma.website.create({ data: { url: normalizedUrl, title: normalizedUrl } })
     } catch (err) {
       if ((err as { code?: string })?.code !== 'P2002') throw err
       website = await prisma.website.findUnique({ where: { url: normalizedUrl } })

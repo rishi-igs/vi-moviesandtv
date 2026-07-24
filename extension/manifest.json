@@ -1,38 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Lighthouse Performance Tracker",
-  "version": "2.0.0",
-  "description": "Automatically runs Lighthouse audits on VI Movies & TV and Red Bull websites, tracking results in your dashboard",
+  "version": "3.0.0",
+  "description": "Run Lighthouse audits on any website from your browser, tracking results in your dashboard",
   "permissions": [
     "tabs",
     "storage",
-    "webNavigation",
     "notifications"
   ],
   "host_permissions": [
-    "http://*.myvi.in/*",
-    "https://*.myvi.in/*",
-    "http://*.redbull.com/*",
-    "https://*.redbull.com/*",
+    "http://49.249.95.65:3030/*",
     "http://localhost:3000/*",
-    "http://localhost:3001/*",
-    "http://localhost:5173/*",
-    "http://localhost:5174/*",
-    "http://127.0.0.1:3000/*",
-    "http://127.0.0.1:3001/*",
-    "http://127.0.0.1:5173/*",
-    "http://127.0.0.1:5174/*",
-    "http://49.249.95.65:3030/*"
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "*://*.myvi.in/*",
-        "*://*.redbull.com/*"
-      ],
-      "js": ["content-script.js"],
-      "run_at": "document_idle"
-    }
+    "http://127.0.0.1:3000/*"
   ],
   "background": {
     "service_worker": "background.js"

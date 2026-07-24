@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { loadDashboardRows, loadInFlightAudits, loadCurrentBatch, startBulkAudit, loadAllAudits, loadAuditDiagnostics } from "./data.js";
 import { downloadExcel, downloadPdf, downloadDiagnosticsPdf, generatePdfData, generateDiagnosticsPdfData, reportRowsToSheetRows, compareColumnsToSheetRows } from "./export.js";
@@ -26,6 +26,97 @@ const IconBarChart = () => <svg {...svgProps}><path d="M18 20V10" /><path d="M12
 const IconSparkles = () => <svg {...svgProps}><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3Z" /><path d="m19 15 0.7 2.3L22 18l-2.3 0.7L19 21l-0.7-2.3L16 18l2.3-0.7L19 15Z" /><path d="m5 15 0.7 2.3L8 18l-2.3 0.7L5 21l-0.7-2.3L2 18l2.3-0.7L5 15Z" /></svg>;
 const IconDownload = () => <svg {...svgProps}><path d="M12 15V3" /><path d="m7 10 5 5 5-5" /><path d="M21 21H3" /></svg>;
 const IconMail = () => <svg {...svgProps}><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>;
+const IconChevronDown = () => <svg {...svgProps}><path d="m6 9 6 6 6-6" /></svg>;
+const IconSun = () => <svg {...svgProps}><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>;
+const IconMoon = () => <svg {...svgProps}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>;
+const IconInbox = () => <svg {...svgProps}><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg>;
+const IconTemplate = () => <svg {...svgProps}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M9 21V9" /></svg>;
+
+// ---------------------------------------------------------------------------
+// Lightweight toast bus — components anywhere can call showToast() without
+// prop-drilling; <ToastStack /> (rendered once in App) listens and renders.
+// ---------------------------------------------------------------------------
+function showToast(message, type = "success") {
+  window.dispatchEvent(new CustomEvent("app:toast", { detail: { message, type, id: Date.now() + Math.random() } }));
+}
+
+function ToastStack() {
+  const [toasts, setToasts] = useState([]);
+
+  useEffect(() => {
+    function onToast(e) {
+      const t = e.detail;
+      setToasts(list => [...list, t]);
+      setTimeout(() => setToasts(list => list.filter(x => x.id !== t.id)), 3500);
+    }
+    window.addEventListener("app:toast", onToast);
+    return () => window.removeEventListener("app:toast", onToast);
+  }, []);
+
+  if (!toasts.length) return null;
+  return createPortal(
+    <div className="toast-stack">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast toast-${t.type}`}>
+          <span className="toast-icon">{t.type === "error" ? "⚠" : "✓"}</span>
+          <span>{t.message}</span>
+        </div>
+      ))}
+    </div>,
+    document.body
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Theme toggle — light/dark, persisted to localStorage, applied to <html>.
+// ---------------------------------------------------------------------------
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+}
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem("dashboard-theme") || "light"; } catch { return "light"; }
+  });
+
+  useEffect(() => {
+    applyTheme(theme);
+    try { localStorage.setItem("dashboard-theme", theme); } catch {}
+  }, [theme]);
+
+  const isDark = theme === "dark";
+  return (
+    <button className="theme-toggle" onClick={() => setTheme(isDark ? "light" : "dark")} title="Toggle light / dark theme">
+      {isDark ? <IconSun /> : <IconMoon />}
+      <span>{isDark ? "Light" : "Dark"}</span>
+    </button>
+  );
+}
+
+// Skeleton placeholders shown during the very first data load.
+function LoadingSkeleton() {
+  return (
+    <>
+      <div className="hero-stats" style={{ marginTop: 18 }}>
+        {Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton skeleton-card" />)}
+      </div>
+      <div className="skeleton-table">
+        {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton skeleton-row" />)}
+      </div>
+    </>
+  );
+}
+
+// Friendly empty state when there are no audits yet.
+function EmptyState() {
+  return (
+    <div className="empty-state">
+      <div className="empty-state-icon"><IconInbox /></div>
+      <h3>No audits yet</h3>
+      <p>Run an audit from the browser extension, or paste URLs into the Bulk Audit box above to get started.</p>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Threshold -> CSS class helpers (Lighthouse standard breakpoints)
@@ -115,6 +206,7 @@ function PageFilter({ rows, selected, onChange }) {
       <button className="export-btn" onClick={() => setOpen(o => !o)}>
         <IconLayers />
         <span>{allSelected ? "All Pages" : `${count} of ${pages.length} Pages`}</span>
+        <IconChevronDown />
       </button>
       {open && (
         <div className="page-filter-popover">
@@ -140,17 +232,88 @@ function PageFilter({ rows, selected, onChange }) {
   );
 }
 
-function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows, diagnosticsFilename, children }) {
+// Generic dropdown used for the Export/Email menus — click the trigger to
+// open a popover of actions, click outside (or click an item) to close it.
+function DropdownMenu({ label, icon, disabled, busy, children }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  return (
+    <div className="page-filter" ref={ref}>
+      <button className="export-btn" onClick={() => setOpen(o => !o)} disabled={disabled}>
+        {icon}
+        <span>{busy || label}</span>
+        <IconChevronDown />
+      </button>
+      {open && (
+        <div className="page-filter-popover dropdown-menu-popover" onClick={() => setOpen(false)}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows, diagnosticsFilename, templateRows, children }) {
   const [exporting, setExporting] = useState(false);
   const [exportingDiagnostics, setExportingDiagnostics] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
   const [showDiagnosticsEmail, setShowDiagnosticsEmail] = useState(false);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const templateFileRef = useRef(null);
+
+  function handleDefaultTemplate() {
+    if (!templateRows || !templateRows.length) return;
+    downloadExcel("performance-report.xlsx", [
+      { name: "Report", rows: reportRowsToSheetRows(templateRows) }
+    ]);
+    showToast("Default report downloaded");
+  }
+
+  async function handleTemplateFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !templateRows || !templateRows.length) return;
+    setTemplateBusy(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const workbook = XLSX.read(buf, { type: "array" });
+      const filled = fillTemplateWorkbook(workbook, templateRows);
+      if (!filled) {
+        showToast("Couldn't find a recognizable header row — need columns like \"URL\" and \"Performance\"", "error");
+        return;
+      }
+      XLSX.writeFile(filled, file.name.replace(/\.xlsx?$/i, "") + "-filled.xlsx");
+      showToast("Filled template downloaded");
+    } catch {
+      showToast("Failed to read that file — use a valid .xlsx/.xls", "error");
+    } finally {
+      setTemplateBusy(false);
+    }
+  }
+
+  function handleExcel() {
+    onExcel();
+    showToast("Excel file downloaded");
+  }
 
   async function handlePdf() {
     if (!targetRef.current || exporting) return;
     setExporting(true);
     try {
       await downloadPdf(targetRef.current, pdfFilename);
+      showToast("PDF downloaded");
+    } catch {
+      showToast("Couldn't generate the PDF", "error");
     } finally {
       setExporting(false);
     }
@@ -168,6 +331,9 @@ function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows,
           .filter(g => g.entries.length)
       }));
       downloadDiagnosticsPdf(diagnosticsFilename, sections);
+      showToast("Diagnostics PDF downloaded");
+    } catch {
+      showToast("Couldn't generate the diagnostics PDF", "error");
     } finally {
       setExportingDiagnostics(false);
     }
@@ -225,25 +391,52 @@ function ExportBar({ targetRef, onExcel, pdfFilename, disabled, diagnosticsRows,
   return (
     <div className="export-bar">
       {children}
-      <button className="export-btn" onClick={onExcel} disabled={disabled}>
-        <IconDownload /><span>Export Excel</span>
-      </button>
-      <button className="export-btn" onClick={handlePdf} disabled={disabled || exporting}>
-        <IconDownload /><span>{exporting ? "Generating PDF…" : "Export Dashboard PDF"}</span>
-      </button>
-      {diagnosticsRows && (
-        <button className="export-btn" onClick={handleDiagnosticsPdf} disabled={disabled || exportingDiagnostics}>
-          <IconDownload /><span>{exportingDiagnostics ? "Gathering findings…" : "Export Diagnostics PDF"}</span>
-        </button>
+
+      <DropdownMenu
+        label="Export"
+        icon={<IconDownload />}
+        disabled={disabled}
+        busy={exporting ? "Generating PDF…" : exportingDiagnostics ? "Gathering findings…" : null}
+      >
+        <button className="dropdown-item" onClick={handleExcel}>Export Excel</button>
+        <button className="dropdown-item" onClick={handlePdf}>Export Dashboard PDF</button>
+        {diagnosticsRows && (
+          <button className="dropdown-item" onClick={handleDiagnosticsPdf}>Export Diagnostics PDF</button>
+        )}
+      </DropdownMenu>
+
+      <DropdownMenu label="Email" icon={<IconMail />} disabled={disabled}>
+        <button className="dropdown-item" onClick={() => setShowEmail(true)}>Email Dashboard</button>
+        {diagnosticsRows && (
+          <button className="dropdown-item" onClick={() => setShowDiagnosticsEmail(true)}>Email Diagnostics</button>
+        )}
+      </DropdownMenu>
+
+      {templateRows && (
+        <DropdownMenu
+          label="Template"
+          icon={<IconTemplate />}
+          disabled={disabled}
+          busy={templateBusy ? "Filling template…" : null}
+        >
+          <button className="dropdown-item" onClick={() => templateFileRef.current?.click()}>
+            <span>Custom template</span>
+            <span className="dropdown-item-sub">Upload your own — .xlsx or .xls</span>
+          </button>
+          <button className="dropdown-item" onClick={handleDefaultTemplate}>
+            <span>Default template</span>
+            <span className="dropdown-item-sub">Download our format — .xlsx</span>
+          </button>
+        </DropdownMenu>
       )}
-      <button className="export-btn" onClick={() => setShowEmail(true)} disabled={disabled || exporting}>
-        <IconMail /><span>Email Dashboard</span>
-      </button>
-      {diagnosticsRows && (
-        <button className="export-btn" onClick={() => setShowDiagnosticsEmail(true)} disabled={disabled}>
-          <IconMail /><span>Email Diagnostics</span>
-        </button>
-      )}
+      <input
+        ref={templateFileRef}
+        type="file"
+        accept=".xlsx,.xls"
+        onChange={handleTemplateFile}
+        style={{ display: "none" }}
+      />
+
       <EmailModal visible={showEmail} title="Send Dashboard Report via Email" onSend={handleSendEmail} onClose={() => setShowEmail(false)} />
       <EmailModal visible={showDiagnosticsEmail} title="Send Diagnostics Report via Email" onSend={handleSendDiagnosticsEmail} onClose={() => setShowDiagnosticsEmail(false)} />
     </div>
@@ -329,46 +522,194 @@ function EmailModal({ visible, title = "Send Report via Email", onSend, onClose 
 }
 
 // ---------------------------------------------------------------------------
+// Hover tooltip for stats — reveals the specific pages behind a number on
+// hover (portaled to <body> so it isn't clipped by panel overflow, and
+// flips above the anchor when there isn't room below).
+// ---------------------------------------------------------------------------
+function StatTooltip({ anchorRect, title, items, emptyText, onMouseEnter, onMouseLeave }) {
+  const elRef = useRef(null);
+  const [style, setStyle] = useState(null);
+
+  // Two-pass positioning: the box's real height depends on its content (a
+  // handful of rows vs. many), so we measure it before deciding whether it
+  // flips above or below the anchor. Otherwise flipping-above placement
+  // assumed the box would fill all available space and left a large empty
+  // gap between a short box and the anchor.
+  useLayoutEffect(() => {
+    if (!anchorRect || !elRef.current) { setStyle(null); return; }
+    const width = 288;
+    const margin = 12;
+    const gap = 8;
+    const maxHeight = 300;
+    const contentHeight = Math.min(elRef.current.scrollHeight, maxHeight);
+
+    const spaceBelow = window.innerHeight - anchorRect.bottom - gap - margin;
+    const spaceAbove = anchorRect.top - gap - margin;
+    let top, cap;
+    if (spaceBelow >= contentHeight || spaceBelow >= spaceAbove) {
+      cap = Math.max(70, Math.min(maxHeight, spaceBelow));
+      top = anchorRect.bottom + gap;
+    } else {
+      cap = Math.max(70, Math.min(maxHeight, spaceAbove));
+      top = anchorRect.top - gap - Math.min(contentHeight, cap);
+    }
+    const left = Math.min(Math.max(anchorRect.left, margin), window.innerWidth - width - margin);
+    setStyle({ top, left, width, maxHeight: cap });
+  }, [anchorRect, title, items, emptyText]);
+
+  if (!anchorRect) return null;
+
+  return createPortal(
+    <div
+      ref={elRef}
+      className="stat-tooltip"
+      style={style || { top: -9999, left: -9999, width: 288, maxHeight: 300 }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <div className="stat-tooltip-title">{title}</div>
+      {items && items.length ? (
+        <div className="stat-tooltip-list">
+          {items.map((it, i) => (
+            <div className="stat-tooltip-item" key={i}>
+              <span className="stat-tooltip-label" title={it.label}>{it.label}</span>
+              <span className={`stat-tooltip-value ${it.tone || ""}`}>{it.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="stat-tooltip-empty">{emptyText || "No pages"}</div>
+      )}
+    </div>,
+    document.body
+  );
+}
+
+// Shared hover-tooltip open/close logic with a short grace period on close,
+// so moving the mouse from a (possibly thin) hover target across the gap
+// into the portaled tooltip doesn't close it before the cursor arrives.
+function useTooltipHover() {
+  const [rect, setRect] = useState(null);
+  const closeTimer = useRef(null);
+
+  function show(el) {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+    if (el) setRect(el.getBoundingClientRect());
+  }
+  function scheduleHide() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => { setRect(null); closeTimer.current = null; }, 150);
+  }
+  function cancelHide() {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+  }
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+
+  return { rect, show, scheduleHide, cancelHide };
+}
+
+// Wraps any element so hovering it shows a StatTooltip anchored to it.
+function HoverStat({ title, items, emptyText, className, children, ...rest }) {
+  const ref = useRef(null);
+  const { rect, show, scheduleHide, cancelHide } = useTooltipHover();
+  return (
+    <div
+      ref={ref}
+      className={className}
+      onMouseEnter={() => show(ref.current)}
+      onMouseLeave={scheduleHide}
+      {...rest}
+    >
+      {children}
+      {rect && (
+        <StatTooltip
+          anchorRect={rect}
+          title={title}
+          items={items}
+          emptyText={emptyText}
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Presentational components
 // ---------------------------------------------------------------------------
-function BrandBar({ brandId }) {
-  const config = BRANDS.find((b) => b.id === brandId)
+function TopBar() {
   return (
-    <header className="brand-bar">
-      {config?.logo ? (
-        <img className="logo-left" src={config.logo} alt={config.label} />
-      ) : (
-        <img className="logo-left" src="/Assets/vi-logo.png" alt="VI" />
-      )}
-      <div className="brand-stripe"><span className="s1" /><span className="s2" /><span className="s3" /></div>
-      <img className="logo-right" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS Engineering Quality" />
+    <header className="app-header">
+      <img className="app-logo" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS Engineering Quality" />
+      <ThemeToggle />
     </header>
   );
 }
 
 function HeroStats({ rows }) {
-  const bestPageLoad = minOf(rows.map(r => r.pageLoad));
-  const worstPageLoad = maxOf(rows.map(r => r.pageLoad));
+  const withLoad = rows
+    .filter(r => r.pageLoad != null && !isNaN(r.pageLoad))
+    .sort((a, b) => a.pageLoad - b.pageLoad);
+  const bestRow = withLoad[0] || null;
+  const worstRow = withLoad[withLoad.length - 1] || null;
   const avgPageLoad = avg(rows.map(r => r.pageLoad));
+
+  const fastCount = withLoad.filter(r => r.pageLoad < 1).length;
+  const modCount = withLoad.filter(r => r.pageLoad >= 1 && r.pageLoad <= 2).length;
+  const slowCount = withLoad.filter(r => r.pageLoad > 2).length;
+
+  const loadItem = r => ({
+    label: r.page,
+    value: fmt(r.pageLoad, 2, " s"),
+    tone: r.pageLoad < 1 ? "good" : r.pageLoad <= 2 ? "warn" : "bad",
+  });
+
+  const cards = [
+    {
+      icon: <IconDocument />, bg: "icon-bg-blue",
+      val: rows.length, lbl: "Pages Tested",
+      title: "All tested pages (fastest first)",
+      items: withLoad.map(loadItem),
+    },
+    {
+      icon: <IconStopwatch />, bg: "icon-bg-green",
+      val: fmt(bestRow?.pageLoad, 2, " s"), lbl: "Best Page Load",
+      sub: bestRow?.page,
+      title: "Fastest pages",
+      items: withLoad.slice(0, 5).map(loadItem),
+    },
+    {
+      icon: <IconStopwatch />, bg: "icon-bg-red",
+      val: fmt(worstRow?.pageLoad, 2, " s"), lbl: "Worst Page Load",
+      sub: worstRow?.page,
+      title: "Slowest pages",
+      items: withLoad.slice(-5).reverse().map(loadItem),
+    },
+    {
+      icon: <IconBarChart />, bg: "icon-bg-blue",
+      val: fmt(avgPageLoad, 2, " s"), lbl: "Avg Page Load",
+      title: "Page-load spread",
+      items: [
+        { label: "Fast (< 1s)", value: `${fastCount}`, tone: "good" },
+        { label: "Moderate (1–2s)", value: `${modCount}`, tone: "warn" },
+        { label: "Slow (> 2s)", value: `${slowCount}`, tone: "bad" },
+      ],
+    },
+  ];
 
   return (
     <div className="hero-stats">
-      <div className="stat-card">
-        <div className="icon icon-bg-blue"><IconDocument /></div>
-        <div><div className="val">{rows.length}</div><div className="lbl">Pages Tested</div></div>
-      </div>
-      <div className="stat-card">
-        <div className="icon icon-bg-green"><IconStopwatch /></div>
-        <div><div className="val">{fmt(bestPageLoad, 2, " s")}</div><div className="lbl">Best Page Load</div></div>
-      </div>
-      <div className="stat-card">
-        <div className="icon icon-bg-red"><IconStopwatch /></div>
-        <div><div className="val">{fmt(worstPageLoad, 2, " s")}</div><div className="lbl">Worst Page Load</div></div>
-      </div>
-      <div className="stat-card">
-        <div className="icon icon-bg-blue"><IconBarChart /></div>
-        <div><div className="val">{fmt(avgPageLoad, 2, " s")}</div><div className="lbl">Avg Page Load</div></div>
-      </div>
+      {cards.map((c, i) => (
+        <HoverStat key={i} className="stat-card stat-card-hover" title={c.title} items={c.items} emptyText="No page-load data yet">
+          <div className={`icon ${c.bg}`}>{c.icon}</div>
+          <div>
+            <div className="val">{c.val}</div>
+            <div className="lbl">{c.lbl}</div>
+            {c.sub && <div className="stat-sub" title={c.sub}>{c.sub}</div>}
+          </div>
+        </HoverStat>
+      ))}
     </div>
   );
 }
@@ -413,7 +754,7 @@ function InFlightPanel({ items }) {
   );
 }
 
-function BulkAuditPanel({ brand }) {
+function BulkAuditPanel() {
   const [text, setText] = useState("");
   const [batch, setBatch] = useState(null);
   const [starting, setStarting] = useState(false);
@@ -485,13 +826,12 @@ function BulkAuditPanel({ brand }) {
   useEffect(() => {
     let cancelled = false;
     function poll() {
-      loadCurrentBatch({ brand }).then(data => { if (!cancelled) setBatch(data); }).catch(() => {});
+      loadCurrentBatch().then(data => { if (!cancelled) setBatch(data); }).catch(() => {});
     }
-    setBatch(null);
     poll();
     const interval = setInterval(poll, 4000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [brand]);
+  }, []);
 
   const items = batch?.items ?? [];
   const running = items.some(it => it.status === "queued" || it.status === "running");
@@ -649,71 +989,145 @@ function MetricCell({ auditId, metricKey, className, children }) {
   );
 }
 
-function ReportTable({ rows }) {
+// Column definitions for the sortable header — key maps to a row field.
+const REPORT_COLUMNS = [
+  { key: "page", icon: <IconDocument />, label: "Page", className: "col-page", type: "text" },
+  { key: "url", icon: <IconLink />, label: "URL", className: "col-url", type: "text" },
+  { key: "fcp", icon: <IconStopwatch />, label: "First Contentful Paint (s)", type: "num" },
+  { key: "lcp", icon: <IconImage />, label: "Largest Contentful Paint (s)", type: "num" },
+  { key: "tbt", icon: <IconHand />, label: "Total Blocking Time (ms)", type: "num" },
+  { key: "clsVal", icon: <IconLayers />, label: "Cumulative Layout Shift", type: "num" },
+  { key: "si", icon: <IconActivity />, label: "Speed Index (s)", type: "num" },
+  { key: "accessibility", icon: <IconWheelchair />, label: "Accessibility", type: "num" },
+  { key: "bestPractices", icon: <IconAward />, label: "Best Practices", type: "num" },
+  { key: "seo", icon: <IconSearch />, label: "SEO", type: "num" },
+  { key: "pageLoad", icon: <IconStopwatch />, label: "Page Load Time (s)", type: "num" },
+];
+
+function ReportTable({ rows, searchable = false }) {
   const tableWrapRef = useRef(null);
-  const stickyBarRef = useRef(null);
   const tableRef = useRef(null);
+  const stickyBarRef = useRef(null);
   const syncingRef = useRef(false);
   const [scrollWidth, setScrollWidth] = useState(0);
+  const [clientWidth, setClientWidth] = useState(0);
+  const [query, setQuery] = useState("");
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
 
-  useLayoutEffect(() => {
+  const displayRows = useMemo(() => {
+    let out = rows;
+    if (searchable && query.trim()) {
+      const q = query.trim().toLowerCase();
+      out = out.filter(r =>
+        (r.page || "").toLowerCase().includes(q) || (r.url || "").toLowerCase().includes(q)
+      );
+    }
+    if (sortKey) {
+      const dir = sortDir === "asc" ? 1 : -1;
+      out = [...out].sort((a, b) => {
+        const av = a[sortKey], bv = b[sortKey];
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;   // nulls always last
+        if (bv == null) return -1;
+        if (typeof av === "string") return av.localeCompare(bv) * dir;
+        return (av - bv) * dir;
+      });
+    }
+    return out;
+  }, [rows, query, sortKey, sortDir, searchable]);
+
+  function toggleSort(key) {
+    if (sortKey === key) {
+      setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  // Measure the table so the floating scrollbar mirror can size its track,
+  // and only render it when the table actually overflows horizontally.
+  useEffect(() => {
     function measure() {
       if (tableRef.current) setScrollWidth(tableRef.current.scrollWidth);
+      if (tableWrapRef.current) setClientWidth(tableWrapRef.current.clientWidth);
     }
     measure();
     const ro = new ResizeObserver(measure);
     if (tableRef.current) ro.observe(tableRef.current);
+    if (tableWrapRef.current) ro.observe(tableWrapRef.current);
     window.addEventListener("resize", measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [rows]);
+    return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
+  }, [displayRows]);
 
+  // Keep the floating scrollbar and the real table panned together.
   function handleTableScroll() {
     if (syncingRef.current) { syncingRef.current = false; return; }
-    if (stickyBarRef.current) {
+    if (stickyBarRef.current && tableWrapRef.current) {
       syncingRef.current = true;
       stickyBarRef.current.scrollLeft = tableWrapRef.current.scrollLeft;
     }
   }
   function handleStickyScroll() {
     if (syncingRef.current) { syncingRef.current = false; return; }
-    if (tableWrapRef.current) {
+    if (tableWrapRef.current && stickyBarRef.current) {
       syncingRef.current = true;
       tableWrapRef.current.scrollLeft = stickyBarRef.current.scrollLeft;
     }
   }
 
+  const overflowing = scrollWidth > clientWidth + 1;
+
   return (
     <div className="table-scroll-region">
+    {searchable && (
+      <div className="table-search-row">
+        <div className="table-search">
+          <IconSearch />
+          <input
+            type="text"
+            placeholder="Search by page or URL…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+        </div>
+        <span className="table-search-count">
+          {displayRows.length} of {rows.length} {rows.length === 1 ? "page" : "pages"}
+        </span>
+      </div>
+    )}
     <section className="table-wrap" ref={tableWrapRef} onScroll={handleTableScroll}>
       <table ref={tableRef}>
         <thead>
-          <tr className="group-row">
-            <th></th><th></th><th></th>
-            <th colSpan="5">Performance</th>
-            <th></th><th></th><th></th><th></th>
-          </tr>
           <tr className="col-row">
-            <th style={{ width: 40 }}>#</th>
-            <th className="col-page"><div className="th-inner"><IconDocument /><span>Page</span></div></th>
-            <th className="col-url"><div className="th-inner"><IconLink /><span>URL</span></div></th>
-            <th><div className="th-inner"><IconStopwatch /><span>First Contentful Paint (s)</span></div></th>
-            <th><div className="th-inner"><IconImage /><span>Largest Contentful Paint (s)</span></div></th>
-            <th><div className="th-inner"><IconHand /><span>Total Blocking Time (ms)</span></div></th>
-            <th><div className="th-inner"><IconLayers /><span>Cumulative Layout Shift</span></div></th>
-            <th><div className="th-inner"><IconActivity /><span>Speed Index (s)</span></div></th>
-            <th><div className="th-inner"><IconWheelchair /><span>Accessibility</span></div></th>
-            <th><div className="th-inner"><IconAward /><span>Best Practices</span></div></th>
-            <th><div className="th-inner"><IconSearch /><span>SEO</span></div></th>
-            <th><div className="th-inner"><IconStopwatch /><span>Page Load Time (s)</span></div></th>
+            <th style={{ width: 46 }}>#</th>
+            {REPORT_COLUMNS.map(col => {
+              const active = sortKey === col.key;
+              return (
+                <th
+                  key={col.key}
+                  className={`${col.className || ""} sortable`}
+                  onClick={() => toggleSort(col.key)}
+                  title="Click to sort"
+                >
+                  <div className="th-inner">
+                    {col.icon}<span>{col.label}</span>
+                    <span className={`sort-ind ${active ? "active" : ""}`}>
+                      {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+                    </span>
+                  </div>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? (
-            <tr><td colSpan="12" style={{ textAlign: "center", padding: 24, color: "#98a2b3" }}>No successful audits available.</td></tr>
-          ) : rows.map((r, i) => (
+          {displayRows.length === 0 ? (
+            <tr><td colSpan="12" style={{ textAlign: "center", padding: 24, color: "var(--muted)" }}>
+              {rows.length === 0 ? "No successful audits available." : "No pages match your search."}
+            </td></tr>
+          ) : displayRows.map((r, i) => (
             <tr key={r.auditId ?? r.websiteId}>
               <td className="col-idx"><span className="idx-badge">{i + 1}</span></td>
               <td className="col-page">
@@ -748,8 +1162,8 @@ function ReportTable({ rows }) {
         </tbody>
       </table>
     </section>
-    {scrollWidth > 0 && (
-      <div className="sticky-scrollbar" ref={stickyBarRef} onScroll={handleStickyScroll}>
+    {overflowing && (
+      <div className="sticky-scrollbar" ref={stickyBarRef} onScroll={handleStickyScroll} aria-hidden="true">
         <div style={{ width: scrollWidth }} />
       </div>
     )}
@@ -778,6 +1192,8 @@ function TabBar({ tab, setTab }) {
   );
 }
 
+const HISTORY_ALL = "__all__";
+
 function HistoryTab({ audits }) {
   const pages = useMemo(() => {
     const map = new Map();
@@ -785,15 +1201,16 @@ function HistoryTab({ audits }) {
     return [...map.entries()].map(([url, page]) => ({ url, page }));
   }, [audits]);
 
-  const [selectedUrl, setSelectedUrl] = useState("");
+  const [selectedUrl, setSelectedUrl] = useState(HISTORY_ALL);
   useEffect(() => {
-    if ((!selectedUrl || !pages.some(p => p.url === selectedUrl)) && pages.length) {
-      setSelectedUrl(pages[0].url);
+    if (selectedUrl !== HISTORY_ALL && !pages.some(p => p.url === selectedUrl) && pages.length) {
+      setSelectedUrl(HISTORY_ALL);
     }
   }, [pages, selectedUrl]);
 
+  const showAll = selectedUrl === HISTORY_ALL;
   const rows = audits
-    .filter(a => a.url === selectedUrl)
+    .filter(a => showAll || a.url === selectedUrl)
     .sort((a, b) => new Date(b.auditedAt) - new Date(a.auditedAt));
 
   const historyRef = useRef(null);
@@ -802,16 +1219,17 @@ function HistoryTab({ audits }) {
     return <p className="no-data-note">No completed audits yet.</p>;
   }
 
-  const selectedPage = pages.find(p => p.url === selectedUrl)?.page ?? "history";
+  const selectedPage = showAll ? "all-pages" : (pages.find(p => p.url === selectedUrl)?.page ?? "history");
 
   return (
     <div>
       <div className="tab-controls">
         <label className="tab-controls-label">Page:</label>
         <select className="tab-select" value={selectedUrl} onChange={e => setSelectedUrl(e.target.value)}>
+          <option value={HISTORY_ALL}>All pages</option>
           {pages.map(p => <option key={p.url} value={p.url}>{p.page}</option>)}
         </select>
-        <span className="bulk-audit-summary">{rows.length} audit{rows.length === 1 ? "" : "s"} recorded</span>
+        <span className="bulk-audit-summary">{rows.length} audit{rows.length === 1 ? "" : "s"} recorded{showAll ? ` across ${pages.length} page${pages.length === 1 ? "" : "s"}` : ""}</span>
       </div>
       <ExportBar
         targetRef={historyRef}
@@ -995,23 +1413,42 @@ function OverviewPanel({ rows }) {
 
 function ScoreDistributionPanel({ rows }) {
   const donuts = [
-    { pct: avg(rows.map(r => r.accessibility)), color: "var(--acc-orange)", lbl: "Accessibility" },
-    { pct: avg(rows.map(r => r.bestPractices)), color: "var(--acc-green)", lbl: "Best Practices" },
-    { pct: avg(rows.map(r => r.seo)), color: "var(--acc-blue)", lbl: "SEO" },
-    { pct: avg(rows.map(r => r.performance)), color: "var(--acc-purple)", lbl: "Performance" }
+    { key: "accessibility", pct: avg(rows.map(r => r.accessibility)), color: "var(--acc-orange)", lbl: "Accessibility" },
+    { key: "bestPractices", pct: avg(rows.map(r => r.bestPractices)), color: "var(--acc-green)", lbl: "Best Practices" },
+    { key: "seo", pct: avg(rows.map(r => r.seo)), color: "var(--acc-blue)", lbl: "SEO" },
+    { key: "performance", pct: avg(rows.map(r => r.performance)), color: "var(--acc-purple)", lbl: "Performance" }
   ];
+
+  // Pages below the "good" threshold (90) for a metric — the ones worth a look.
+  function needsAttention(key) {
+    return rows
+      .filter(r => r[key] != null && r[key] < 90)
+      .sort((a, b) => a[key] - b[key])
+      .map(r => ({
+        label: r.page,
+        value: `${r[key]}%`,
+        tone: r[key] >= 50 ? "warn" : "bad",
+      }));
+  }
+
   return (
     <div className="panel">
       <div className="panel-title">Score Distribution</div>
       <div className="panel-body">
         <div className="donut-row">
           {donuts.map((d, i) => (
-            <div className="donut-item" key={i}>
+            <HoverStat
+              className="donut-item donut-item-hover"
+              key={i}
+              title={`${d.lbl} — pages needing attention`}
+              items={needsAttention(d.key)}
+              emptyText={`All pages score 90+ on ${d.lbl} 🎉`}
+            >
               <div className="donut" style={{ background: donutGradient(d.pct, d.color) }}>
                 <span>{d.pct == null ? "—" : Math.round(d.pct) + "%"}</span>
               </div>
               <div className="lbl">{d.lbl}</div>
-            </div>
+            </HoverStat>
           ))}
         </div>
       </div>
@@ -1020,28 +1457,68 @@ function ScoreDistributionPanel({ rows }) {
 }
 
 function RatingPanel({ rows }) {
-  const times = rows.map(r => r.pageLoad).filter(v => v != null && !isNaN(v));
-  const total = times.length;
-  const fast = times.filter(t => t < 1).length;
-  const moderate = times.filter(t => t >= 1 && t <= 2).length;
-  const slow = times.filter(t => t > 2).length;
+  const rated = rows.filter(r => r.pageLoad != null && !isNaN(r.pageLoad));
+  const total = rated.length;
+  const fastRows = rated.filter(r => r.pageLoad < 1).sort((a, b) => a.pageLoad - b.pageLoad);
+  const moderateRows = rated.filter(r => r.pageLoad >= 1 && r.pageLoad <= 2).sort((a, b) => a.pageLoad - b.pageLoad);
+  const slowRows = rated.filter(r => r.pageLoad > 2).sort((a, b) => b.pageLoad - a.pageLoad);
 
   const pct = n => (total ? Math.round((n / total) * 100) : 0);
-  const fastPct = pct(fast);
-  const moderatePct = pct(moderate);
+  const fastPct = pct(fastRows.length);
+  const moderatePct = pct(moderateRows.length);
 
-  const fastDeg = total ? (fast / total) * 360 : 0;
-  const moderateDeg = total ? (moderate / total) * 360 : 0;
-  const donutBg = total
-    ? `conic-gradient(var(--good) 0deg ${fastDeg}deg, var(--warn) ${fastDeg}deg ${fastDeg + moderateDeg}deg, var(--bad) ${fastDeg + moderateDeg}deg 360deg)`
-    : "#e7eaf0";
+  const toItems = (bucket, tone) => bucket.map(r => ({ label: r.page, value: fmt(r.pageLoad, 2, " s"), tone }));
+
+  // Hover state for individual donut arcs.
+  const { rect, show, scheduleHide, cancelHide } = useTooltipHover();
+  const [activeArc, setActiveArc] = useState(null); // { title, items, emptyText }
+  const enterArc = (e, seg) => {
+    setActiveArc({ title: seg.title, items: toItems(seg.rows, seg.tone), emptyText: seg.empty });
+    show(e.currentTarget);
+  };
+
+  const segments = [
+    { key: "fast", rows: fastRows, tone: "good", color: "var(--good)", title: "Fast pages (< 1s)", empty: "No fast pages" },
+    { key: "moderate", rows: moderateRows, tone: "warn", color: "var(--warn)", title: "Moderate pages (1–2s)", empty: "No moderate pages" },
+    { key: "slow", rows: slowRows, tone: "bad", color: "var(--bad)", title: "Slow pages (> 2s)", empty: "No slow pages" },
+  ];
+
+  // Build SVG donut arcs. r chosen so the circumference is easy to slice.
+  const R = 16, C = 2 * Math.PI * R;
+  let cursor = 0;
+  const arcs = segments.map(seg => {
+    const frac = total ? seg.rows.length / total : 0;
+    const len = frac * C;
+    const arc = { ...seg, len, dasharray: `${len} ${C - len}`, dashoffset: -cursor * C };
+    cursor += frac;
+    return arc;
+  });
 
   return (
     <div className="panel">
       <div className="panel-title">Performance Rating (Page Load Time)</div>
       <div className="rating-body">
-        <div className="rating-donut" style={{ background: donutBg }}>
-          <div className="center">
+        <div className="rating-donut-wrap">
+          <svg viewBox="0 0 40 40" className="rating-svg">
+            <g transform="rotate(-90 20 20)">
+              {total === 0 && (
+                <circle cx="20" cy="20" r={R} fill="none" strokeWidth="6" className="rating-arc-empty" />
+              )}
+              {arcs.filter(a => a.len > 0).map(a => (
+                <circle
+                  key={a.key}
+                  cx="20" cy="20" r={R} fill="none"
+                  stroke={a.color} strokeWidth="6"
+                  strokeDasharray={a.dasharray}
+                  strokeDashoffset={a.dashoffset}
+                  className="rating-arc"
+                  onMouseEnter={e => enterArc(e, a)}
+                  onMouseLeave={scheduleHide}
+                />
+              ))}
+            </g>
+          </svg>
+          <div className="rating-donut-center">
             {total ? (
               <>
                 <div className="pct">{fastPct}%</div>
@@ -1054,11 +1531,27 @@ function RatingPanel({ rows }) {
               </>
             )}
           </div>
+          {rect && activeArc && (
+            <StatTooltip
+              anchorRect={rect}
+              title={activeArc.title}
+              items={activeArc.items}
+              emptyText={activeArc.emptyText}
+              onMouseEnter={cancelHide}
+              onMouseLeave={scheduleHide}
+            />
+          )}
         </div>
         <div className="rating-legend">
-          <div className="row"><span className="dot" style={{ background: "var(--good)" }} /><span className="txt">Fast (&lt; 1s)</span><span className="count">{total ? `${fast} pages (${fastPct}%)` : "—"}</span></div>
-          <div className="row"><span className="dot" style={{ background: "var(--warn)" }} /><span className="txt">Moderate (1s - 2s)</span><span className="count">{total ? `${moderate} pages (${moderatePct}%)` : "—"}</span></div>
-          <div className="row"><span className="dot" style={{ background: "var(--bad)" }} /><span className="txt">Slow (&gt; 2s)</span><span className="count">{total ? `${slow} pages (${pct(slow)}%)` : "—"}</span></div>
+          <div className="row">
+            <span className="dot" style={{ background: "var(--good)" }} /><span className="txt">Fast (&lt; 1s)</span><span className="count">{total ? `${fastRows.length} pages (${fastPct}%)` : "—"}</span>
+          </div>
+          <div className="row">
+            <span className="dot" style={{ background: "var(--warn)" }} /><span className="txt">Moderate (1s - 2s)</span><span className="count">{total ? `${moderateRows.length} pages (${moderatePct}%)` : "—"}</span>
+          </div>
+          <div className="row">
+            <span className="dot" style={{ background: "var(--bad)" }} /><span className="txt">Slow (&gt; 2s)</span><span className="count">{total ? `${slowRows.length} pages (${pct(slowRows.length)}%)` : "—"}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1161,115 +1654,94 @@ function AIAssistantPanel({ rows }) {
   );
 }
 
-const BRANDS = [
-  {
-    id: "vi",
-    label: "VI Movies & TV",
-    description: "Lighthouse performance audits for VI movies & TV platform",
-    color: "#2563eb",
-    logo: "/Assets/vi-logo.png",
-  },
-  {
-    id: "redbull",
-    label: "Red Bull",
-    description: "Lighthouse performance audits for Red Bull website",
-    color: "#dc2626",
-    logo: "/Assets/redbull-logo-png-transparent.png",
-  },
-];
-
-function LoginPage({ onLogin }) {
-  const [selectedBrand, setSelectedBrand] = useState("vi");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    const creds = LOGIN_CREDENTIALS[selectedBrand];
-    if (username === creds.username && password === creds.password) {
-      onLogin(selectedBrand, username);
-    } else {
-      setError("Invalid username or password. Please try again.");
-    }
-  }
-
-  return (
-    <div className="landing-page">
-      <header className="landing-header">
-        <div className="landing-brand">
-          <img className="landing-logo" src="/Assets/IGS_Main_Logo.BJcAJana_1NGxFy.webp" alt="IGS" />
-        </div>
-        <h1>IGS BEACON</h1>
-        <p className="landing-sub">Sign in to view your Lighthouse audit dashboard</p>
-      </header>
-      <div className="login-container">
-        <form className="login-form" onSubmit={handleSubmit}>
-          <div className="login-brand-select">
-            <label className="login-label">Select Dashboard</label>
-            <div className="login-brand-options">
-              {BRANDS.map(b => (
-                <button
-                  key={b.id}
-                  type="button"
-                  className={`login-brand-option ${selectedBrand === b.id ? "is-active" : ""}`}
-                  style={selectedBrand === b.id ? { borderColor: b.color, color: b.color } : {}}
-                  onClick={() => { setSelectedBrand(b.id); setError(""); }}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="login-field">
-            <label className="login-label" htmlFor="login-username">Username</label>
-            <input
-              id="login-username"
-              className="login-input"
-              type="text"
-              placeholder="Enter username"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              autoFocus
-              required
-            />
-          </div>
-          <div className="login-field">
-            <label className="login-label" htmlFor="login-password">Password</label>
-            <input
-              id="login-password"
-              className="login-input"
-              type="password"
-              placeholder="Enter password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          {error && <div className="login-error">{error}</div>}
-          <button type="submit" className="login-submit" style={{ background: BRANDS.find(b => b.id === selectedBrand)?.color }}>
-            Sign In to {BRANDS.find(b => b.id === selectedBrand)?.label}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-const LOGIN_CREDENTIALS = {
-  vi: { username: "vi", password: "vi@2024", label: "VI Movies & TV" },
-  redbull: { username: "redbull", password: "rb@2024", label: "Red Bull" },
+// ---------------------------------------------------------------------------
+// Custom Report — lets a user upload their own Excel template and get it
+// filled in with the current audit data, instead of always exporting our
+// fixed layout. We match the template's own header row (whatever it calls
+// its columns) against a synonym list, so "URL" / "Page URL" / "Link" all
+// resolve to the same field. Unrecognized columns are just left blank.
+// ---------------------------------------------------------------------------
+const TEMPLATE_FIELD_SYNONYMS = {
+  page: ["page", "page name", "name"],
+  url: ["url", "page url", "link", "website", "address"],
+  fcp: ["fcp", "first contentful paint", "first contentful paint (s)"],
+  lcp: ["lcp", "largest contentful paint", "largest contentful paint (s)"],
+  tbt: ["tbt", "total blocking time", "total blocking time (ms)"],
+  clsVal: ["cls", "cumulative layout shift"],
+  si: ["speed index", "si", "speed index (s)"],
+  performance: ["performance", "performance score", "performance (%)"],
+  accessibility: ["accessibility", "accessibility score", "accessibility (%)"],
+  bestPractices: ["best practices", "best practices score", "best practices (%)"],
+  seo: ["seo", "seo score", "seo (%)"],
+  pageLoad: ["page load", "page load (s)", "page load time"],
+  auditedAt: ["audited at", "date", "audit date", "last audited"]
 };
 
+function matchTemplateField(header) {
+  const norm = String(header ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!norm) return null;
+  for (const [field, synonyms] of Object.entries(TEMPLATE_FIELD_SYNONYMS)) {
+    if (synonyms.includes(norm)) return field;
+  }
+  return null;
+}
+
+function rowFieldValue(row, field) {
+  if (field === "auditedAt") return row.auditedAt ? new Date(row.auditedAt).toLocaleString() : "";
+  const v = row[field];
+  return v == null ? "" : v;
+}
+
+// Finds the template's header row (first row with at least two recognizable
+// column names), then appends one data row per audited page after whatever
+// content already exists — never overwrites anything already in the file.
+function fillTemplateWorkbook(workbook, rows) {
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+
+  let headerRowIndex = -1;
+  let fieldMap = {};
+  for (let r = 0; r < grid.length; r++) {
+    const map = {};
+    grid[r].forEach((cell, c) => {
+      const field = matchTemplateField(cell);
+      if (field) map[c] = field;
+    });
+    if (Object.keys(map).length >= 2) {
+      headerRowIndex = r;
+      fieldMap = map;
+      break;
+    }
+  }
+  if (headerRowIndex === -1) return null;
+
+  const range = XLSX.utils.decode_range(sheet["!ref"]);
+  const startRow = Math.max(range.e.r + 1, headerRowIndex + 1);
+
+  const dataRows = rows.map(row => {
+    const line = [];
+    Object.entries(fieldMap).forEach(([col, field]) => {
+      line[Number(col)] = rowFieldValue(row, field);
+    });
+    return line;
+  });
+
+  XLSX.utils.sheet_add_aoa(sheet, dataRows, { origin: { r: startRow, c: 0 } });
+  const newRange = XLSX.utils.decode_range(sheet["!ref"]);
+  newRange.e.r = Math.max(newRange.e.r, startRow + dataRows.length - 1);
+  sheet["!ref"] = XLSX.utils.encode_range(newRange);
+
+  return workbook;
+}
+
 export default function App() {
-  const [page, setPage] = useState("login");
-  const [loggedInUser, setLoggedInUser] = useState(null);
   const [rows, setRows] = useState([]);
   const [allAudits, setAllAudits] = useState([]);
   const [inFlight, setInFlight] = useState([]);
   const [lastUpdated, setLastUpdated] = useState("—");
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("report");
   const reportRef = useRef(null);
   // null = all pages included (default/unfiltered); otherwise a Set of URLs.
@@ -1279,80 +1751,63 @@ export default function App() {
     [rows, selectedPages]
   );
 
-  const brand = page === "login" ? "all" : page;
-  const brandLabel = BRANDS.find(b => b.id === page)?.label ?? null;
-
   useEffect(() => {
-    if (page === "login") return;
-
-    // Clear immediately so the previous brand's data doesn't flash on screen
-    // while the new brand's fetch is still in flight.
-    setRows([]);
-    setInFlight([]);
-    setAllAudits([]);
-
-    // Guards against a stale response landing after the brand was switched
-    // again — without this, a slow VI fetch resolving after you've already
-    // navigated to Red Bull can overwrite the correct state with stale data.
     let cancelled = false;
 
     function load() {
-      loadDashboardRows({ brand })
+      loadDashboardRows()
         .then(data => {
           if (cancelled) return;
           setRows(data);
           setLastUpdated(new Date().toLocaleString());
           setError(null);
         })
-        .catch(e => { if (!cancelled) setError(e.message); });
-      loadInFlightAudits({ brand }).then(data => { if (!cancelled) setInFlight(data); });
-      loadAllAudits({ brand }).then(data => { if (!cancelled) setAllAudits(data); });
+        .catch(e => { if (!cancelled) setError(e.message); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+      loadInFlightAudits().then(data => { if (!cancelled) setInFlight(data); });
+      loadAllAudits().then(data => { if (!cancelled) setAllAudits(data); });
     }
 
     load();
     const interval = setInterval(load, 10000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [page]);
+  }, []);
 
-  if (page === "login") {
-    return <LoginPage onLogin={(brand, user) => { setLoggedInUser(user); setPage(brand); }} />;
-  }
+  const showInitialLoading = loading && rows.length === 0 && !error;
+  const showEmpty = !loading && !error && rows.length === 0;
 
   return (
     <div className="page">
-      <div className="brand-nav">
-        <button className="brand-nav-back" onClick={() => { setLoggedInUser(null); setPage("login"); }}>
-          ← Logout
-        </button>
-        <span className="brand-nav-label" style={{ color: BRANDS.find(b => b.id === page)?.color }}>
-          {brandLabel}
-        </span>
-      </div>
-      <BrandBar brandId={page} />
+      <TopBar />
       <Hero rows={rows} lastUpdated={lastUpdated} />
       <TabBar tab={tab} setTab={setTab} />
       {tab === "report" && (
         <>
           <InFlightPanel items={inFlight} />
-          <BulkAuditPanel brand={brand} />
+          <BulkAuditPanel />
           {error ? (
             <div style={{ color: "var(--bad)", textAlign: "center", padding: 20 }}>Failed to load data: {error}</div>
+          ) : showInitialLoading ? (
+            <LoadingSkeleton />
+          ) : showEmpty ? (
+            <EmptyState />
           ) : (
             <>
               <ExportBar
                 targetRef={reportRef}
                 disabled={visibleRows.length === 0}
-                pdfFilename={`${page}-performance-report.pdf`}
-                onExcel={() => downloadExcel(`${page}-performance-report.xlsx`, [
+                pdfFilename="performance-report.pdf"
+                onExcel={() => downloadExcel("performance-report.xlsx", [
                   { name: "Report", rows: reportRowsToSheetRows(visibleRows) }
                 ])}
                 diagnosticsRows={visibleRows}
                 diagnosticsFilename="website-performance-diagnostics.pdf"
+                templateRows={visibleRows}
               >
                 <PageFilter rows={rows} selected={selectedPages} onChange={setSelectedPages} />
               </ExportBar>
               <div ref={reportRef}>
-                <ReportTable rows={visibleRows} />
+                <ReportTable rows={visibleRows} searchable />
                 <section className="summary-grid">
                   <OverviewPanel rows={visibleRows} />
                   <ScoreDistributionPanel rows={visibleRows} />
@@ -1366,6 +1821,7 @@ export default function App() {
       {tab === "history" && <HistoryTab audits={allAudits} />}
       {tab === "compare" && <CompareTab audits={allAudits} />}
       <AIAssistantPanel rows={rows} />
+      <ToastStack />
     </div>
   );
 }

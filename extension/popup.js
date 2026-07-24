@@ -1,12 +1,13 @@
-const toggle = document.getElementById('toggle')
+const auditBtn = document.getElementById('auditBtn')
 const statusText = document.getElementById('statusText')
 const listEl = document.getElementById('list')
 const lastErrorEl = document.getElementById('lastError')
-const brandOptions = document.getElementById('brandOptions')
 const serverInput = document.getElementById('serverInput')
 const serverSave = document.getElementById('serverSave')
 const serverSaved = document.getElementById('serverSaved')
 const dashboardLink = document.getElementById('dashboardLink')
+
+const PRODUCTION_API_BASE = 'http://49.249.95.65:3030'
 
 function formatTime(ts) {
   const ago = Math.round((Date.now() - ts) / 1000)
@@ -33,26 +34,29 @@ function renderAudits(audits) {
   `).join('')
 }
 
-function updateBrandButtons(selectedBrand) {
-  const buttons = brandOptions.querySelectorAll('.brand-btn')
-  buttons.forEach((btn) => {
-    const brand = btn.dataset.brand
-    btn.classList.toggle('is-active', brand === selectedBrand)
-  })
-}
-
 function applyDashboardLink(apiBaseUrl) {
-  dashboardLink.href = apiBaseUrl || 'http://localhost:3000'
+  dashboardLink.href = apiBaseUrl || PRODUCTION_API_BASE
 }
 
-chrome.storage.local.get(['enabled', 'recentAudits', 'selectedBrand', 'apiBaseUrl'], ({ enabled, recentAudits, selectedBrand, apiBaseUrl }) => {
-  toggle.checked = enabled !== false
-  statusText.textContent = enabled !== false
-    ? 'Auto-audit is enabled'
-    : 'Auto-audit is paused'
+function requestAudit(url, tabId) {
+  chrome.runtime.sendMessage({ type: 'manual-audit', url, tabId })
+  statusText.textContent = `Auditing ${new URL(url).hostname}…`
+}
 
-  updateBrandButtons(selectedBrand || 'all')
+auditBtn.addEventListener('click', () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+    if (!tab?.url) return
+    requestAudit(tab.url, tab.id)
+  })
+})
 
+listEl.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-reaudit]')
+  if (!btn) return
+  requestAudit(btn.dataset.reaudit)
+})
+
+chrome.storage.local.get(['recentAudits', 'apiBaseUrl'], ({ recentAudits, apiBaseUrl }) => {
   serverInput.value = apiBaseUrl || ''
   applyDashboardLink(apiBaseUrl)
 
@@ -67,22 +71,6 @@ chrome.storage.local.get(['enabled', 'recentAudits', 'selectedBrand', 'apiBaseUr
       lastErrorEl.style.display = 'none'
     }
   })
-})
-
-toggle.addEventListener('change', () => {
-  const enabled = toggle.checked
-  chrome.storage.local.set({ enabled })
-  statusText.textContent = enabled
-    ? 'Auto-audit is enabled'
-    : 'Auto-audit is paused'
-})
-
-brandOptions.addEventListener('click', (event) => {
-  const btn = event.target.closest('.brand-btn')
-  if (!btn) return
-  const brand = btn.dataset.brand
-  chrome.storage.local.set({ selectedBrand: brand })
-  updateBrandButtons(brand)
 })
 
 serverSave.addEventListener('click', () => {
@@ -100,16 +88,9 @@ serverSave.addEventListener('click', () => {
 })
 
 chrome.storage.local.onChanged.addListener((changes) => {
-  if (changes.recentAudits) renderAudits(changes.recentAudits.newValue)
-  if (changes.enabled) {
-    const enabled = changes.enabled.newValue
-    toggle.checked = enabled !== false
-    statusText.textContent = enabled !== false
-      ? 'Auto-audit is enabled'
-      : 'Auto-audit is paused'
-  }
-  if (changes.selectedBrand) {
-    updateBrandButtons(changes.selectedBrand.newValue || 'all')
+  if (changes.recentAudits) {
+    renderAudits(changes.recentAudits.newValue)
+    statusText.textContent = ''
   }
   if (changes.lastError) {
     const lastError = changes.lastError.newValue
@@ -117,6 +98,7 @@ chrome.storage.local.onChanged.addListener((changes) => {
       lastErrorEl.style.display = 'block'
       const time = new Date(lastError.time).toLocaleTimeString()
       lastErrorEl.textContent = `${time} — ${lastError.msg}`
+      statusText.textContent = ''
     } else {
       lastErrorEl.style.display = 'none'
     }

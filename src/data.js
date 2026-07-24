@@ -21,17 +21,7 @@ function pageLabelOf(url) {
   }
 }
 
-function detectBrand(url) {
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname === "myvi.in" || hostname.endsWith(".myvi.in")) return "vi";
-    if (hostname === "redbull.com" || hostname.endsWith(".redbull.com")) return "redbull";
-    return null;
-  } catch { return null; }
-}
-
-export async function loadDashboardRows(opts) {
-  const brand = opts?.brand;
+export async function loadDashboardRows() {
   const res = await fetch("/api/websites", { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to load live data (HTTP ${res.status})`);
@@ -61,20 +51,16 @@ export async function loadDashboardRows(opts) {
         pageLoad: metric.speedIndex != null ? metric.speedIndex / 1000 : null,
         auditedAt: audit.createdAt,
         concurrentAudits: audit.concurrentAudits ?? null,
-        brand: detectBrand(site.url),
       };
     })
     .filter(Boolean)
-    .filter(r => !brand || brand === "all" || r.brand === brand)
     .sort((a, b) => new Date(b.auditedAt) - new Date(a.auditedAt));
 }
 
 // Server-truth "what's auditing right now" — backed by the server's in-memory
 // queue, not client state, so it survives a page refresh.
-export async function loadInFlightAudits(opts) {
-  const brand = opts?.brand;
-  const qs = brand && brand !== "all" ? `?brand=${encodeURIComponent(brand)}` : "";
-  const res = await fetch(`/api/audit-status${qs}`, { cache: "no-store" });
+export async function loadInFlightAudits() {
+  const res = await fetch("/api/audit-status", { cache: "no-store" });
   if (!res.ok) return [];
   const data = await res.json();
   return data.inFlight ?? [];
@@ -83,18 +69,15 @@ export async function loadInFlightAudits(opts) {
 // The current/most recent bulk-audit batch. The server drives the batch to
 // completion itself, so polling this reflects true progress even after a
 // refresh or a closed tab.
-export async function loadCurrentBatch(opts) {
-  const brand = opts?.brand;
-  const qs = brand && brand !== "all" ? `?brand=${encodeURIComponent(brand)}` : "";
-  const res = await fetch(`/api/audit-batch${qs}`, { cache: "no-store" });
+export async function loadCurrentBatch() {
+  const res = await fetch("/api/audit-batch", { cache: "no-store" });
   if (!res.ok) return null;
   const data = await res.json();
   return data.batch ?? null;
 }
 
 // Full audit history across every website — powers the History and Compare tabs.
-export async function loadAllAudits(opts) {
-  const brand = opts?.brand;
+export async function loadAllAudits() {
   const res = await fetch("/api/audits", { cache: "no-store" });
   if (!res.ok) return [];
   const audits = await res.json();
@@ -121,11 +104,9 @@ export async function loadAllAudits(opts) {
         pageLoad: metric.speedIndex != null ? metric.speedIndex / 1000 : null,
         auditedAt: a.createdAt,
         concurrentAudits: a.concurrentAudits ?? null,
-        brand: detectBrand(a.website.url),
       };
     })
-    .filter(Boolean)
-    .filter(a => !brand || brand === "all" || a.brand === brand);
+    .filter(Boolean);
 }
 
 // Real per-audit Lighthouse findings for the hover-diagnosis tooltip, fetched
