@@ -50,7 +50,6 @@ export interface WebsiteWithAudits {
   id: number
   url: string
   title: string | null
-  brand: string | null
   createdAt: Date
   audits: AuditWithMetrics[]
 }

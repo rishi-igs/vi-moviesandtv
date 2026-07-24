@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { runAuditForUrl } from '@/app/_lib/run-audit'
-import { detectBrand } from '@/app/_lib/brand'
 import {
   getCurrentBatch,
   isBatchActive,
@@ -11,17 +10,8 @@ import {
   markBatchComplete,
 } from '@/app/_lib/audit-batch'
 
-export async function GET(request: NextRequest) {
-  const brand = request.nextUrl.searchParams.get('brand')
-  const batch = getCurrentBatch()
-
-  if (!batch || !brand || brand === 'all') {
-    return NextResponse.json({ batch })
-  }
-
-  return NextResponse.json({
-    batch: { ...batch, items: batch.items.filter((item) => detectBrand(item.url) === brand) },
-  })
+export async function GET() {
+  return NextResponse.json({ batch: getCurrentBatch() })
 }
 
 export async function POST(request: NextRequest) {

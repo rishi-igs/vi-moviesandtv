@@ -1,22 +1,14 @@
 export const dynamic = 'force-dynamic'
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/app/_lib/prisma'
 
-export async function GET(request: NextRequest) {
-  const brand = request.nextUrl.searchParams.get('brand')
-
-  const where = brand && brand !== 'all'
-    ? { brand }
-    : {}
-
+export async function GET() {
   const websites = await prisma.website.findMany({
-    where,
     select: {
       id: true,
       url: true,
       title: true,
-      brand: true,
       createdAt: true,
       audits: {
         orderBy: { createdAt: 'desc' },

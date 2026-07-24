@@ -1,60 +1,32 @@
-const API_BASES = ['http://localhost:3002', 'http://127.0.0.1:3002', 'http://localhost:3001', 'http://localhost:3000']
+// Shipped default so a fresh install works against the VM with zero setup —
+// end users never need to open the popup's "Dashboard server URL" field.
+// It's still overridable there (e.g. for local dev against your own machine).
+const PRODUCTION_API_BASE = 'http://49.249.95.65:3030'
+
+async function getApiBases() {
+  const { apiBaseUrl } = await chrome.storage.local.get('apiBaseUrl')
+  if (apiBaseUrl) return [apiBaseUrl.replace(/\/$/, '')]
+  return [PRODUCTION_API_BASE]
+}
 const API_PATHS = ['/api/audit', '/api/audit-legacy']
-const COOLDOWN_MS = 5 * 60 * 1000
 
-const BRAND_CONFIGS = [
-  { brand: 'vi', hostSuffix: 'myvi.in', label: 'VI Movies & TV' },
-  { brand: 'redbull', hostSuffix: 'redbull.com', label: 'Red Bull' },
-]
-
-function getBrandForUrl(url) {
+// Generic tool now — any http(s) page can be audited, so this only rules out
+// things that obviously can't be (browser-internal pages, the extension's
+// own popup, etc.), not any fixed site list.
+function isAuditableUrl(url) {
   try {
-    const hostname = new URL(url).hostname.toLowerCase()
-    for (const config of BRAND_CONFIGS) {
-      if (hostname === config.hostSuffix || hostname.endsWith(`.${config.hostSuffix}`)) {
-        return config.brand
-      }
-    }
-    return null
-  } catch (e) {
-    return null
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
   }
 }
 
-function isSupportedHost(url) {
-  return getBrandForUrl(url) !== null
-}
-
-function ensureEnabledDefault() {
-  chrome.storage.local.get('enabled', ({ enabled }) => {
-    if (enabled === undefined) chrome.storage.local.set({ enabled: true })
-  })
-}
-
-try { chrome.runtime.onStartup.addListener(ensureEnabledDefault) } catch {}
-ensureEnabledDefault()
-
-async function updateBadgeForEnabled(enabled) {
-  try {
-    if (enabled) {
-      await chrome.action.setBadgeText({ text: 'ON' })
-      await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' })
-    } else {
-      await chrome.action.setBadgeText({ text: '' })
-    }
-  } catch (e) {}
-}
-
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.enabled) updateBadgeForEnabled(changes.enabled.newValue !== false)
-})
-
-chrome.storage.local.get('enabled', ({ enabled }) => updateBadgeForEnabled(enabled !== false))
-
 async function postAuditRequest(url) {
   let lastError = null
+  const apiBases = await getApiBases()
 
-  for (const base of API_BASES) {
+  for (const base of apiBases) {
     for (const path of API_PATHS) {
       try {
         const res = await fetch(`${base}${path}`, {
@@ -93,7 +65,7 @@ async function postAuditRequest(url) {
 }
 
 async function triggerAudit(url, tabId) {
-  if (!url || !url.startsWith('http')) return
+  if (!isAuditableUrl(url)) return
 
   try {
     const { base, res, data, text } = await postAuditRequest(url)
@@ -170,106 +142,11 @@ async function triggerAudit(url, tabId) {
   }
 }
 
-async function getActiveBrand() {
-  for (const base of API_BASES) {
-    try {
-      const res = await fetch(`${base}/api/active-brand`, {
-        signal: AbortSignal.timeout(5000),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        return data.brand ?? null
-      }
-    } catch (err) {
-      // try next base
-    }
-  }
-  return null
-}
-
-async function shouldAudit(url) {
-  const { enabled, auditHistory = {} } = await chrome.storage.local.get([
-    'enabled',
-    'auditHistory',
-  ])
-
-  if (enabled === false) return false
-
-  if (!isSupportedHost(url)) return false
-
-  // Check if a specific brand is active in the dashboard — if so, only
-  // auto-audit URLs matching that brand.
-  const activeBrand = await getActiveBrand()
-  if (activeBrand && getBrandForUrl(url) !== activeBrand) return false
-
-  const lastRun = auditHistory[url]
-  if (lastRun && Date.now() - lastRun < COOLDOWN_MS) return false
-
-  auditHistory[url] = Date.now()
-  await chrome.storage.local.set({ auditHistory })
-  return true
-}
-
+// Manual only — no auto-audit-on-navigate. The popup sends this after the
+// user clicks "Audit Current Page" (or "Re-audit" on a past entry).
 chrome.runtime.onMessage.addListener(async (message, sender) => {
-  if (!message || !message.type) return
-
-  if (message.type === 'manual-audit' && message.url) {
-    const tabId = sender?.tab?.id
-    if (!isSupportedHost(message.url)) return
-    if (message.bypassCooldown) {
-      const { auditHistory = {} } = await chrome.storage.local.get('auditHistory')
-      delete auditHistory[message.url]
-      await chrome.storage.local.set({ auditHistory })
-      triggerAudit(message.url, tabId)
-      return
-    }
-    if (await shouldAudit(message.url)) triggerAudit(message.url, tabId)
-    return
-  }
-
-  if (message.type === 'get-brands') {
-    return Promise.resolve({ brands: BRAND_CONFIGS })
-  }
-})
-
-async function onTabUpdated(tabId, changeInfo, tab) {
-  if (changeInfo.status !== 'complete' || !tab.url) return
-  if (!tab.url.startsWith('http')) return
-  if (tab.url.startsWith('http://localhost') || tab.url.startsWith('http://127.0.0.1')) return
-
-  if (await shouldAudit(tab.url)) {
-    triggerAudit(tab.url, tabId)
-  }
-}
-
-async function handleNavigation(url, tabId) {
-  if (!url || !url.startsWith('http')) return
-  if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) return
-
-  if (await shouldAudit(url)) {
-    triggerAudit(url, tabId)
-  }
-}
-
-async function onNavigationCompleted(details) {
-  if (details.frameId !== 0) return
-  await handleNavigation(details.url, details.tabId)
-}
-
-async function onNavigationCommitted(details) {
-  if (details.frameId !== 0) return
-  await handleNavigation(details.url, details.tabId)
-}
-
-chrome.tabs.onUpdated.addListener(onTabUpdated)
-chrome.webNavigation.onCompleted.addListener(onNavigationCompleted)
-chrome.webNavigation.onHistoryStateUpdated.addListener(onNavigationCompleted)
-chrome.webNavigation.onCommitted.addListener(onNavigationCommitted)
-chrome.webNavigation.onReferenceFragmentUpdated.addListener(onNavigationCompleted)
-
-chrome.runtime.onMessage.addListener(async (message, sender) => {
-  if (!message || message.type !== 'spa-navigate' || !message.url) return
-  const tabId = sender?.tab?.id
-  if (message.url.startsWith('http://localhost') || message.url.startsWith('http://127.0.0.1')) return
-  await handleNavigation(message.url, tabId)
+  if (!message || message.type !== 'manual-audit' || !message.url) return
+  if (!isAuditableUrl(message.url)) return
+  const tabId = sender?.tab?.id ?? message.tabId
+  triggerAudit(message.url, tabId)
 })
